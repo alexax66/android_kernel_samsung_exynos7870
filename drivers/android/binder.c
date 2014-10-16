@@ -72,9 +72,13 @@
 #include <linux/spinlock.h>
 #include <linux/ratelimit.h>
 
-#include "binder.h"
+#include <uapi/linux/android/binder.h>
 #include "binder_alloc.h"
 #include "binder_trace.h"
+
+#ifdef CONFIG_ANDROID_BINDER_IPC_32BIT
+#define BINDER_IPC_32BIT 1
+#endif
 
 static HLIST_HEAD(binder_deferred_list);
 static DEFINE_MUTEX(binder_deferred_lock);
