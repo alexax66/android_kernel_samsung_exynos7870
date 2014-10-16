@@ -206,3 +206,5 @@ obj-$(CONFIG_SENSORS_SSP)	+= sensorhub/
 #GPS
 obj-$(CONFIG_GPS_BCMxxxxx)	+= gps/
 obj-$(CONFIG_GPS_BCM4752)	+= gps/
+
+obj-$(CONFIG_ANDROID)		+= android/

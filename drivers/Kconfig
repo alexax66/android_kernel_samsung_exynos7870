@@ -218,4 +218,6 @@ source "drivers/five/Kconfig"
 
 source "drivers/security/samsung/icdrv/Kconfig"
 
+source "drivers/android/Kconfig"
+
 endmenu
