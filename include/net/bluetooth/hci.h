@@ -154,6 +154,7 @@ enum {
 enum {
 	HCI_DUT_MODE,
 	HCI_FORCE_SC,
+	HCI_FORCE_LESC,
 	HCI_FORCE_STATIC_ADDR,
 };
 
