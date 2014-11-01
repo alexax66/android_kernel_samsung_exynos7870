@@ -30,7 +30,7 @@ struct user_namespace {
 	int			level;
 	kuid_t			owner;
 	kgid_t			group;
-	unsigned int		proc_inum;
+	unsigned int		ns;
 	unsigned long		flags;
 
 	/* Register of per-UID persistent keyrings for this namespace */
