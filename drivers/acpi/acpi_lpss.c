@@ -1,7 +1,7 @@
 /*
  * ACPI support for Intel Lynxpoint LPSS.
  *
- * Copyright (C) 2013, Intel Corporation
+ * Copyright (C) 2013, 2014, Intel Corporation
  * Authors: Mika Westerberg <mika.westerberg@linux.intel.com>
  *          Rafael J. Wysocki <rafael.j.wysocki@intel.com>
  *
@@ -60,6 +60,8 @@ ACPI_MODULE_NAME("acpi_lpss");
 #define LPSS_CLK_DIVIDER		BIT(2)
 #define LPSS_LTR			BIT(3)
 #define LPSS_SAVE_CTX			BIT(4)
+#define LPSS_DEV_PROXY			BIT(5)
+#define LPSS_PROXY_REQ			BIT(6)
 
 struct lpss_private_data;
 
@@ -71,8 +73,10 @@ struct lpss_device_desc {
 	void (*setup)(struct lpss_private_data *pdata);
 };
 
+static struct device *proxy_device;
+
 static struct lpss_device_desc lpss_dma_desc = {
-	.flags = LPSS_CLK,
+	.flags = LPSS_CLK | LPSS_PROXY_REQ,
 };
 
 struct lpss_private_data {
@@ -386,6 +390,8 @@ static int acpi_lpss_create_device(struct acpi_device *adev,
 	adev->driver_data = pdata;
 	pdev = acpi_create_platform_device(adev);
 	if (!IS_ERR_OR_NULL(pdev)) {
+		if (!proxy_device && dev_desc->flags & LPSS_DEV_PROXY)
+			proxy_device = &pdev->dev;
 		return 1;
 	}
 
@@ -611,13 +617,26 @@ static int acpi_lpss_runtime_suspend(struct device *dev)
 	if (pdata->dev_desc->flags & LPSS_SAVE_CTX)
 		acpi_lpss_save_ctx(dev, pdata);
 
-	return acpi_dev_runtime_suspend(dev);
+	ret = acpi_dev_runtime_suspend(dev);
+	if (ret)
+		return ret;
+
+	if (pdata->dev_desc->flags & LPSS_PROXY_REQ && proxy_device)
+		return pm_runtime_put_sync_suspend(proxy_device);
+
+	return 0;
 }
 
 static int acpi_lpss_runtime_resume(struct device *dev)
 {
 	struct lpss_private_data *pdata = acpi_driver_data(ACPI_COMPANION(dev));
 	int ret;
+
+	if (pdata->dev_desc->flags & LPSS_PROXY_REQ && proxy_device) {
+		ret = pm_runtime_get_sync(proxy_device);
+		if (ret)
+			return ret;
+	}
 
 	ret = acpi_dev_runtime_resume(dev);
 	if (ret)
