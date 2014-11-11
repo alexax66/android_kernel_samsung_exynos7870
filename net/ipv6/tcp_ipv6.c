@@ -1497,6 +1497,7 @@ process:
 	if (sk_filter(sk, skb))
 		goto discard_and_relse;
 
+	sk_incoming_cpu_update(sk);
 	sk_mark_napi_id(sk, skb);
 	skb->dev = NULL;
 
