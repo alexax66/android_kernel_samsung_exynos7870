@@ -193,8 +193,7 @@ warm:
 	return 0;
 
 err:
-	if (fw)
-		release_firmware(fw);
+	release_firmware(fw);
 
 	dev_dbg(&s->client->dev, "failed=%d\n", ret);
 	return ret;
