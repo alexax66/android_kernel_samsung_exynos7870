@@ -26,7 +26,7 @@
 #ifdef CONFIG_HAS_EARLYSUSPEND
 #include <linux/earlysuspend.h>
 #endif
-#if defined(CONFIG_PM_RUNTIME)
+#if defined(CONFIG_PM)
 #include <linux/pm_runtime.h>
 #endif
 #include <linux/semaphore.h>
@@ -5741,7 +5741,7 @@ static int bt532_ts_probe(struct i2c_client *client,
 	input_dev->close = bt532_ts_close;
 #endif
 
-#if defined(CONFIG_PM_RUNTIME)
+#if defined(CONFIG_PM)
 	pm_runtime_enable(&client->dev);
 #endif
 
@@ -5884,7 +5884,7 @@ static const struct of_device_id zinitix_match_table[] = {
 
 #if defined(CONFIG_PM) && !defined(CONFIG_HAS_EARLYSUSPEND) &&!defined(CONFIG_INPUT_ENABLED)
 static const struct dev_pm_ops bt532_ts_pm_ops = {
-#if defined(CONFIG_PM_RUNTIME)
+#if defined(CONFIG_PM)
 	SET_RUNTIME_PM_OPS(bt532_ts_suspend, bt532_ts_resume, NULL)
 #else
 	SET_SYSTEM_SLEEP_PM_OPS(bt532_ts_suspend, bt532_ts_resume)
