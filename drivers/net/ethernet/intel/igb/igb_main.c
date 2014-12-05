@@ -186,7 +186,6 @@ static int igb_pci_enable_sriov(struct pci_dev *dev, int num_vfs);
 static int igb_suspend(struct device *);
 #endif
 static int igb_resume(struct device *);
-#ifdef CONFIG_PM_RUNTIME
 static int igb_runtime_suspend(struct device *dev);
 static int igb_runtime_resume(struct device *dev);
 static int igb_runtime_idle(struct device *dev);
@@ -7454,7 +7453,6 @@ static int igb_resume(struct device *dev)
 	return err;
 }
 
-#ifdef CONFIG_PM_RUNTIME
 static int igb_runtime_idle(struct device *dev)
 {
 	struct pci_dev *pdev = to_pci_dev(dev);
@@ -7476,8 +7474,7 @@ static int igb_runtime_resume(struct device *dev)
 {
 	return igb_resume(dev);
 }
-#endif /* CONFIG_PM_RUNTIME */
-#endif
+#endif /* CONFIG_PM */
 
 static void igb_shutdown(struct pci_dev *pdev)
 {
