@@ -71,9 +71,6 @@ int console_printk[4] = {
 	CONSOLE_LOGLEVEL_DEFAULT,	/* default_console_loglevel */
 };
 
-/* Deferred messaged from sched code are marked by this special level */
-#define SCHED_MESSAGE_LOGLEVEL -2
-
 /*
  * Low level drivers may need that to know if they can schedule in
  * their unblank() callback or not. So let's export it.
@@ -1392,7 +1389,7 @@ static int syslog_print_all(char __user *buf, int size, bool clear)
 int do_syslog(int type, char __user *buf, int len, bool from_file)
 {
 	bool clear = false;
-	static int saved_console_loglevel = -1;
+	static int saved_console_loglevel = LOGLEVEL_DEFAULT;
 	int error;
 
 	error = check_syslog_permissions(type, from_file);
@@ -1445,15 +1442,15 @@ int do_syslog(int type, char __user *buf, int len, bool from_file)
 		break;
 	/* Disable logging to console */
 	case SYSLOG_ACTION_CONSOLE_OFF:
-		if (saved_console_loglevel == -1)
+		if (saved_console_loglevel == LOGLEVEL_DEFAULT)
 			saved_console_loglevel = console_loglevel;
 		console_loglevel = minimum_console_loglevel;
 		break;
 	/* Enable logging to console */
 	case SYSLOG_ACTION_CONSOLE_ON:
-		if (saved_console_loglevel != -1) {
+		if (saved_console_loglevel != LOGLEVEL_DEFAULT) {
 			console_loglevel = saved_console_loglevel;
-			saved_console_loglevel = -1;
+			saved_console_loglevel = LOGLEVEL_DEFAULT;
 		}
 		break;
 	/* Set level of messages printed to console */
@@ -1465,7 +1462,7 @@ int do_syslog(int type, char __user *buf, int len, bool from_file)
 			len = minimum_console_loglevel;
 		console_loglevel = len;
 		/* Implicitly re-enable logging to console */
-		saved_console_loglevel = -1;
+		saved_console_loglevel = LOGLEVEL_DEFAULT;
 		error = 0;
 		break;
 	/* Number of chars in the log buffer */
@@ -1762,8 +1759,8 @@ asmlinkage int vprintk_emit(int facility, int level,
 	/* cpu currently holding logbuf_lock in this function */
 	static volatile unsigned int logbuf_cpu = UINT_MAX;
 
-	if (level == SCHED_MESSAGE_LOGLEVEL) {
-		level = -1;
+	if (level == LOGLEVEL_SCHED) {
+		level = LOGLEVEL_DEFAULT;
 		in_sched = true;
 	}
 
@@ -1845,12 +1842,12 @@ asmlinkage int vprintk_emit(int facility, int level,
 			const char *end_of_header = printk_skip_level(text);
 			switch (kern_level) {
 			case '0' ... '7':
-				if (level == -1)
+				if (level == LOGLEVEL_DEFAULT)
 					level = kern_level - '0';
 				/* fallthrough */
 #ifdef CONFIG_SEC_DEBUG_AUTO_SUMMARY
 			case 'B' ... 'J':
-				if (level == -1)
+				if (level == LOGLEVEL_DEFAULT)
 					level = LOGLEVEL_PR_AUTO_BASE + (kern_level - 'A'); /* 91 ~ 99 */
 				/* fallthrough */
 #endif
@@ -1949,7 +1946,7 @@ EXPORT_SYMBOL(vprintk_emit);
 
 asmlinkage int vprintk(const char *fmt, va_list args)
 {
-	return vprintk_emit(0, -1, NULL, 0, fmt, args);
+	return vprintk_emit(0, LOGLEVEL_DEFAULT, NULL, 0, fmt, args);
 }
 EXPORT_SYMBOL(vprintk);
 
@@ -2003,7 +2000,7 @@ asmlinkage __visible int printk(const char *fmt, ...)
 	}
 #endif
 	va_start(args, fmt);
-	r = vprintk_emit(0, -1, NULL, 0, fmt, args);
+	r = vprintk_emit(0, LOGLEVEL_DEFAULT, NULL, 0, fmt, args);
 	va_end(args);
 
 	return r;
@@ -2841,7 +2838,7 @@ int printk_deferred(const char *fmt, ...)
 
 	preempt_disable();
 	va_start(args, fmt);
-	r = vprintk_emit(0, SCHED_MESSAGE_LOGLEVEL, NULL, 0, fmt, args);
+	r = vprintk_emit(0, LOGLEVEL_SCHED, NULL, 0, fmt, args);
 	va_end(args);
 
 	__this_cpu_or(printk_pending, PRINTK_PENDING_OUTPUT);
