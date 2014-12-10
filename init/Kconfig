@@ -1089,14 +1089,17 @@ config MEMCG_KMEM
 	  are plenty of kmem available for reclaim. That makes this option
 	  unusable in real life so DO NOT SELECT IT unless for development
 	  purposes.
+
 config MEMCG_HIGHER_SWAPPINESS
 	int "Allow swappiness to be increased up to 200"
 	default 0
 	help
 	  Increase swappiness for all the memcg
+
 config CGROUP_HUGETLB
 	bool "HugeTLB Resource Controller for Control Groups"
-	depends on RESOURCE_COUNTERS && HUGETLB_PAGE
+	depends on HUGETLB_PAGE
+	select PAGE_COUNTER
 	default n
 	help
 	  Provides a cgroup Resource Controller for HugeTLB pages.
