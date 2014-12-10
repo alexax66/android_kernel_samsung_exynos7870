@@ -1012,9 +1012,12 @@ config CGROUP_SCHEDTUNE
 
 	  Say N if unsure.
 
+config PAGE_COUNTER
+       bool
+
 config MEMCG
 	bool "Memory Resource Controller for Control Groups"
-	depends on RESOURCE_COUNTERS
+	select PAGE_COUNTER
 	select EVENTFD
 	help
 	  Provides a memory resource controller that manages both anonymous
