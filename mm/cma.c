@@ -72,8 +72,13 @@ static unsigned long cma_bitmap_aligned_mask(const struct cma *cma,
 static unsigned long cma_bitmap_aligned_offset(const struct cma *cma,
 					       unsigned int align_order)
 {
-	return (cma->base_pfn & ((1UL << align_order) - 1))
-		>> cma->order_per_bit;
+	unsigned int alignment;
+
+	if (align_order <= cma->order_per_bit)
+		return 0;
+	alignment = 1UL << (align_order - cma->order_per_bit);
+	return ALIGN(cma->base_pfn, alignment) -
+		(cma->base_pfn >> cma->order_per_bit);
 }
 
 static unsigned long cma_bitmap_maxno(struct cma *cma)
