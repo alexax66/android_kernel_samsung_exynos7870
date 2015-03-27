@@ -168,7 +168,10 @@ extern void dhd_dump_eapol_4way_message(char *ifname, char *dump_data, bool dire
 #endif
 
 #include <wl_android.h>
+#include <linux/moduleparam.h>
 
+static int wl_divide = 2;
+module_param(wl_divide, int, 0644);
 
 #ifdef ARP_OFFLOAD_SUPPORT
 void aoe_update_host_ipv4_table(dhd_pub_t *dhd_pub, u32 ipa, bool add, int idx);
@@ -7856,10 +7859,10 @@ int dhd_os_wake_lock_timeout(dhd_pub_t *pub)
 #ifdef CONFIG_HAS_WAKELOCK
 		if (dhd->wakelock_rx_timeout_enable)
 			wake_lock_timeout(&dhd->wl_rxwake,
-				msecs_to_jiffies(dhd->wakelock_rx_timeout_enable));
+				msecs_to_jiffies(dhd->wakelock_rx_timeout_enable)/wl_divide);
 		if (dhd->wakelock_ctrl_timeout_enable)
 			wake_lock_timeout(&dhd->wl_ctrlwake,
-				msecs_to_jiffies(dhd->wakelock_ctrl_timeout_enable));
+				msecs_to_jiffies(dhd->wakelock_ctrl_timeout_enable)/wl_divide);
 #endif
 		dhd->wakelock_rx_timeout_enable = 0;
 		dhd->wakelock_ctrl_timeout_enable = 0;
