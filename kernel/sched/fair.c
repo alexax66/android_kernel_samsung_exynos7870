@@ -8582,7 +8582,20 @@ out:
 	 * When the cpu is attached to null domain for ex, it will not be
 	 * updated.
 	 */
-	if (likely(update_next_balance))
+	if (likely(update_next_balance)) {
+
+		/*
+		 * If this cpu has been elected to perform the nohz idle
+		 * balance. Other idle cpus have already rebalance with
+		 * nohz_idle_balance and the nohz.next_balaance has been
+		 * updated accordingly. This cpu has now run the idle load
+		 * balance for itself and we need to update the
+		 * nohz.next_balance accordingly.
+		 */
+		if ((idle == CPU_IDLE) &&
+			time_after(nohz.next_balance, rq->next_balance))
+				nohz.next_balance = rq->next_balance;
+	}
 		rq->next_balance = next_balance;
 }
 
@@ -8596,6 +8609,9 @@ static bool nohz_idle_balance(struct rq *this_rq, enum cpu_idle_type idle)
 	int this_cpu = this_rq->cpu;
 	int balance_cpu;
 	struct rq *rq;
+	/* Earliest time when we have to do rebalance again */
+	unsigned long next_balance = jiffies + 60*HZ;
+	int update_next_balance = 0;
 	bool done = false;
 
 
@@ -8631,10 +8647,18 @@ static bool nohz_idle_balance(struct rq *this_rq, enum cpu_idle_type idle)
 			rebalance_domains(rq, CPU_IDLE);
 		}
 
-		if (time_after(this_rq->next_balance, rq->next_balance))
-			this_rq->next_balance = rq->next_balance;
+		if (time_after(next_balance, rq->next_balance)) {
+			next_balance = rq->next_balance;
+			update_next_balance = 1;
+		}
 	}
-	nohz.next_balance = this_rq->next_balance;
+	/*
+	 * next_balance will be updated only when there is a need.
+	 * When the cpu is attached to null domain for ex, it will not be
+	 * updated.
+	 */
+	if (likely(update_next_balance))
+		nohz.next_balance = next_balance;
 end:
 	clear_bit(NOHZ_BALANCE_KICK, nohz_flags(this_cpu));
 
