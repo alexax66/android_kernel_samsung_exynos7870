@@ -563,3 +563,13 @@ int tty_buffer_set_limit(struct tty_port *port, int limit)
 	return 0;
 }
 EXPORT_SYMBOL_GPL(tty_buffer_set_limit);
+
+bool tty_buffer_restart_work(struct tty_port *port)
+{
+	return queue_work(system_unbound_wq, &port->buf.work);
+}
+
+bool tty_buffer_cancel_work(struct tty_port *port)
+{
+	return cancel_work_sync(&port->buf.work);
+}
