@@ -518,7 +518,7 @@ static void cpufreq_interactive_timer(unsigned long data)
 	spin_lock_irqsave(&speedchange_cpumask_lock, flags);
 	cpumask_set_cpu(data, &speedchange_cpumask);
 	spin_unlock_irqrestore(&speedchange_cpumask_lock, flags);
-	wake_up_process(speedchange_task);
+	wake_up_process_no_notif(speedchange_task);
 
 	goto rearm;
 
@@ -711,7 +711,7 @@ static void cpufreq_interactive_boost(struct cpufreq_interactive_tunables *tunab
 	spin_unlock_irqrestore(&speedchange_cpumask_lock, flags[0]);
 
 	if (anyboost && speedchange_task)
-		wake_up_process(speedchange_task);
+		wake_up_process_no_notif(speedchange_task);
 }
 
 static int cpufreq_interactive_notifier(
@@ -1469,7 +1469,7 @@ static int cpufreq_interactive_cluster1_min_qos_handler(struct notifier_block *b
 		spin_unlock_irqrestore(&speedchange_cpumask_lock, flags);
 
 		if (speedchange_task)
-			wake_up_process(speedchange_task);
+			wake_up_process_no_notif(speedchange_task);
 	}
 exit:
 	mutex_unlock(&gov_lock);
@@ -1524,7 +1524,7 @@ static int cpufreq_interactive_cluster1_max_qos_handler(struct notifier_block *b
 		spin_unlock_irqrestore(&speedchange_cpumask_lock, flags);
 
 		if (speedchange_task)
-			wake_up_process(speedchange_task);
+			wake_up_process_no_notif(speedchange_task);
 	}
 exit:
 	mutex_unlock(&gov_lock);
@@ -1572,7 +1572,7 @@ static int cpufreq_interactive_cluster0_min_qos_handler(struct notifier_block *b
 		spin_unlock_irqrestore(&speedchange_cpumask_lock, flags);
 
 		if (speedchange_task)
-			wake_up_process(speedchange_task);
+			wake_up_process_no_notif(speedchange_task);
 	}
 exit:
 	mutex_unlock(&gov_lock);
@@ -1619,7 +1619,7 @@ static int cpufreq_interactive_cluster0_max_qos_handler(struct notifier_block *b
 		spin_unlock_irqrestore(&speedchange_cpumask_lock, flags);
 
 		if (speedchange_task)
-			wake_up_process(speedchange_task);
+			wake_up_process_no_notif(speedchange_task);
 	}
 exit:
 	mutex_unlock(&gov_lock);
