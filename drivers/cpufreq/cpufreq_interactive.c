@@ -30,7 +30,11 @@
 #include <linux/workqueue.h>
 #include <linux/kthread.h>
 #include <linux/slab.h>
+#if defined(CONFIG_POWERSUSPEND)
+#include <linux/powersuspend.h>
+#endif
 #include <linux/pm_qos.h>
+
 #include <linux/cpu_pm.h>
 
 #include <soc/samsung/pmu_func.h>
@@ -422,7 +426,11 @@ static void cpufreq_interactive_timer(unsigned long data)
 	cpu_load = loadadjfreq / pcpu->policy->cur;
 	tunables->boosted = tunables->boost_val || now < tunables->boostpulse_endtime;
 
+#if defined(CONFIG_POWERSUSPEND)
+	if ((cpu_load >= tunables->go_hispeed_load || tunables->boosted) && !power_suspended) {
+#else
 	if (cpu_load >= tunables->go_hispeed_load || tunables->boosted) {
+#endif
 		if (pcpu->policy->cur < tunables->hispeed_freq) {
 			new_freq = tunables->hispeed_freq;
 		} else {
