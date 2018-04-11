@@ -39,6 +39,9 @@
 #include <linux/mm_inline.h>
 #include <trace/events/writeback.h>
 #include <linux/version.h>
+#ifdef CONFIG_POWERSUSPEND
+#include <linux/powersuspend.h>
+#endif
 
 #include "internal.h"
 
@@ -115,14 +118,24 @@ unsigned long vm_dirty_bytes = 50 * 1024 * 1024;
 /*
  * The interval between `kupdate'-style writebacks
  */
-unsigned int dirty_writeback_interval = 5 * 100; /* centiseconds */
+#define DEFAULT_DIRTY_WRITEBACK_INTERVAL 500 /* centiseconds */
+#define DEFAULT_SUSPEND_DIRTY_WRITEBACK_INTERVAL 1000 /* centiseconds */
+unsigned int dirty_writeback_interval,
+	resume_dirty_writeback_interval;
+unsigned int sleep_dirty_writeback_interval,
+	suspend_dirty_writeback_interval;
 
 EXPORT_SYMBOL_GPL(dirty_writeback_interval);
 
 /*
  * The longest time for which data is allowed to remain dirty
  */
-unsigned int dirty_expire_interval = 30 * 100; /* centiseconds */
+#define DEFAULT_DIRTY_EXPIRE_INTERVAL 3000 /* centiseconds */
+#define DEFAULT_SUSPEND_DIRTY_EXPIRE_INTERVAL 6000 /* centiseconds */
+unsigned int dirty_expire_interval,
+	resume_dirty_expire_interval;
+unsigned int sleep_dirty_expire_interval,
+	suspend_dirty_expire_interval;
 
 /*
  * Flag that makes the machine dump writes/reads and block dirtyings.
@@ -1782,6 +1795,27 @@ static struct notifier_block ratelimit_nb = {
 	.next		= NULL,
 };
 
+#ifdef CONFIG_POWERSUSPEND
+static void writeback_power_suspend(struct power_suspend *handler)
+{
+	dirty_writeback_interval =
+		suspend_dirty_writeback_interval;
+	dirty_expire_interval = suspend_dirty_expire_interval;
+}
+
+static void writeback_power_resume(struct power_suspend *handler)
+{
+	dirty_writeback_interval =
+		resume_dirty_writeback_interval;
+	dirty_expire_interval = resume_dirty_expire_interval;
+}
+
+static struct power_suspend writeback_suspend = {
+	.suspend = writeback_power_suspend,
+	.resume = writeback_power_resume,
+};
+#endif
+
 /*
  * Called early on to tune the page writeback dirty limits.
  *
@@ -1802,8 +1836,20 @@ static struct notifier_block ratelimit_nb = {
  */
 void __init page_writeback_init(void)
 {
+	dirty_writeback_interval = resume_dirty_writeback_interval =
+		DEFAULT_DIRTY_WRITEBACK_INTERVAL;
+	dirty_expire_interval = resume_dirty_expire_interval =
+		DEFAULT_DIRTY_EXPIRE_INTERVAL;
+	sleep_dirty_writeback_interval = suspend_dirty_writeback_interval =
+		DEFAULT_SUSPEND_DIRTY_WRITEBACK_INTERVAL;
+	sleep_dirty_expire_interval = suspend_dirty_expire_interval =
+		DEFAULT_SUSPEND_DIRTY_EXPIRE_INTERVAL;
+
 	writeback_set_ratelimit();
 	register_cpu_notifier(&ratelimit_nb);
+#ifdef CONFIG_POWERSUSPEND
+	register_power_suspend(&writeback_suspend);
+#endif
 
 	fprop_global_init(&writeout_completions, GFP_KERNEL);
 }
