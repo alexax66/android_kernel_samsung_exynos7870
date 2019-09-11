@@ -186,7 +186,8 @@ static irqreturn_t sec_chg_irq_thread(int irq, void *irq_data)
 {
 	struct sec_charger_info *charger = irq_data;
 
-		schedule_delayed_work(&charger->isr_work, 0);
+		queue_delayed_work(system_power_efficient_wq,
+				&charger->isr_work, 0);
 
 	return IRQ_HANDLED;
 }
