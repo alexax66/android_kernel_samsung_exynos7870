@@ -791,11 +791,12 @@ static int alloc_tx_buffer(struct eth_dev *dev)
 #endif
 	list_for_each(act, &dev->tx_reqs) {
 		req = container_of(act, struct usb_request, list);
-		if (!req->buf)
+		if (!req->buf) {
 			req->buf = kmalloc(dev->tx_req_bufsize,
 						GFP_ATOMIC);
 			if (!req->buf)
 				goto free_buf;
+		}
 #ifdef CONFIG_USB_NCM_ACCUMULATE_MULTPKT
 			if(dev->port_usb->is_fixed) {
 				memcpy(req->buf,dev->port_usb->header,dev->port_usb->header_len);

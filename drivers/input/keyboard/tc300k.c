@@ -808,7 +808,7 @@ int tc300k_touchkey_led_control(void *info, bool on)
 			return ret;
 		}
 	} else {
-		if (regulator_is_enabled(regulator))
+		if (regulator_is_enabled(regulator)) {
 			ret = regulator_disable(regulator);
 			if (ret) {
 				input_err(true, &client->dev, "%s: regulator_led disable failed\n", __func__);
@@ -817,6 +817,7 @@ int tc300k_touchkey_led_control(void *info, bool on)
 			else
 				regulator_force_disable(regulator);
 		}
+	}
 	regulator_put(regulator);
 
 	tc300k_keyled_enabled = on;
