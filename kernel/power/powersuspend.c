@@ -4,6 +4,7 @@
  * Copyright (C) 2013 Paul Reioux
  *
  * Modified by Jean-Pierre Rasquin <yank555.lu@gmail.com>
+ *             Park Ju Hyung <qkrwngud825@gmail.com>
  *
  *  v1.1 - make powersuspend not depend on a userspace initiator anymore,
  *         but use a hook in autosleep instead.
@@ -26,6 +27,8 @@
  *
  *  v1.8 - add debug sysfs trigger to see how driver work
  *
+ *  v1.8.1 - add a fb mode, using Linux FB API (Park Ju Hyung)
+ *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
  * may be copied, distributed, and modified under those terms.
@@ -41,6 +44,7 @@
 #include <linux/module.h>
 #include <linux/mutex.h>
 #include <linux/workqueue.h>
+#include <linux/fb.h>
 
 #define MAJOR_VERSION	1
 #define MINOR_VERSION	8
@@ -178,25 +182,52 @@ void set_power_suspend_state_autosleep_hook(int new_state)
 	if (mode == POWER_SUSPEND_AUTOSLEEP || mode == POWER_SUSPEND_HYBRID)
 		set_power_suspend_state(new_state);
 }
-
 EXPORT_SYMBOL(set_power_suspend_state_autosleep_hook);
 
 void set_power_suspend_state_panel_hook(int new_state)
 {
-	dprintk("[POWERSUSPEND] panel resquests %s.\n", new_state == POWER_SUSPEND_ACTIVE ? "sleep" : "wakeup");
-	// Only allow autosleep hook changes in autosleep & hybrid mode
-	if (mode == POWER_SUSPEND_AUTOSLEEP || mode == POWER_SUSPEND_HYBRID)
+	dprintk("[POWERSUSPEND] autosleep resquests %s.\n", new_state == POWER_SUSPEND_ACTIVE ? "sleep" : "wakeup");
+	// Yank555.lu : Only allow panel hook changes in panel mode
+	if (mode == POWER_SUSPEND_PANEL || mode == POWER_SUSPEND_HYBRID)
 		set_power_suspend_state(new_state);
 }
-
 EXPORT_SYMBOL(set_power_suspend_state_panel_hook);
+
+static int power_suspend_fb_notifier(struct notifier_block *self,
+				unsigned long event, void *data)
+{
+	struct fb_event *evdata = (struct fb_event *)data;
+
+	if (mode != POWER_SUSPEND_FB)
+		goto ret;
+
+	if ((event == FB_EVENT_BLANK) && evdata && evdata->data) {
+		int blank = *(int *)evdata->data;
+
+		if (blank == FB_BLANK_POWERDOWN) {
+			set_power_suspend_state(1);
+			return NOTIFY_OK;
+		} else if (blank == FB_BLANK_UNBLANK) {
+			set_power_suspend_state(0);
+			return NOTIFY_OK;
+		}
+	}
+
+ret:
+	return NOTIFY_DONE;
+}
+
+static struct notifier_block power_suspend_fb_notifier_block = {
+	.notifier_call = power_suspend_fb_notifier,
+	.priority = -1,
+};
 
 // ------------------------------------------ sysfs interface ------------------------------------------
 
 static ssize_t power_suspend_state_show(struct kobject *kobj,
 		struct kobj_attribute *attr, char *buf)
 {
-        return sprintf(buf, "%u\n", state);
+	return sprintf(buf, "%u\n", state);
 }
 
 static ssize_t power_suspend_state_store(struct kobject *kobj,
@@ -218,14 +249,14 @@ static ssize_t power_suspend_state_store(struct kobject *kobj,
 }
 
 static struct kobj_attribute power_suspend_state_attribute =
-	__ATTR(power_suspend_state, 0660,
+	__ATTR(power_suspend_state, 0664,
 		power_suspend_state_show,
 		power_suspend_state_store);
 
 static ssize_t power_suspend_mode_show(struct kobject *kobj,
 		struct kobj_attribute *attr, char *buf)
 {
-        return sprintf(buf, "%u\n", mode);
+	return sprintf(buf, "%u\n", mode);
 }
 
 static ssize_t power_suspend_mode_store(struct kobject *kobj,
@@ -236,18 +267,30 @@ static ssize_t power_suspend_mode_store(struct kobject *kobj,
 	sscanf(buf, "%d\n", &data);
 
 	switch (data) {
+		case POWER_SUSPEND_FB:
+			if (mode != POWER_SUSPEND_FB) {
+				mode = data;
+				fb_register_client(&power_suspend_fb_notifier_block);
+			}
+			break;
 		case POWER_SUSPEND_AUTOSLEEP:
 		case POWER_SUSPEND_PANEL:
-		case POWER_SUSPEND_USERSPACE:	mode = data;
-		case POWER_SUSPEND_HYBRID:	mode = data;
-						return count;
+		case POWER_SUSPEND_USERSPACE:
+		case POWER_SUSPEND_HYBRID:
+			if (mode == POWER_SUSPEND_FB) {
+				fb_unregister_client(&power_suspend_fb_notifier_block);
+			}
+			mode = data;
+			break;
 		default:
 			return -EINVAL;
 	}
+
+	return count;
 }
 
 static struct kobj_attribute power_suspend_mode_attribute =
-	__ATTR(power_suspend_mode, 0660,
+	__ATTR(power_suspend_mode, 0664,
 		power_suspend_mode_show,
 		power_suspend_mode_store);
 
@@ -283,26 +326,28 @@ static int __init power_suspend_init(void)
 	int sysfs_result;
 
 	power_suspend_kobj = kobject_create_and_add("power_suspend",
-		kernel_kobj);
+				kernel_kobj);
 
 	if (!power_suspend_kobj) {
-		pr_err("%s kobject create failed!\n", __FUNCTION__);
-	return -ENOMEM;
+		pr_err("%s kobject create failed!\n", __func__);
+		return -ENOMEM;
 	}
 
 	sysfs_result = sysfs_create_group(power_suspend_kobj,
-		&power_suspend_attr_group);
+			&power_suspend_attr_group);
 
 	if (sysfs_result) {
-		pr_info("%s group create failed!\n", __FUNCTION__);
+		pr_info("%s group create failed!\n", __func__);
 		kobject_put(power_suspend_kobj);
-	return -ENOMEM;
+		return -ENOMEM;
 	}
 
 //	mode = POWER_SUSPEND_AUTOSLEEP;	// Yank555.lu : Default to autosleep mode
 //	mode = POWER_SUSPEND_USERSPACE;	// Yank555.lu : Default to userspace mode
 //	mode = POWER_SUSPEND_PANEL;	// Yank555.lu : Default to display panel mode
-	mode = POWER_SUSPEND_HYBRID;	// Yank555.lu : Default to display panel / autosleep hybrid mode
+//	mode = POWER_SUSPEND_HYBRID;	// Yank555.lu : Default to display panel / autosleep hybrid mode
+	mode = POWER_SUSPEND_FB;	// arter97 : Default to display panel mode
+	fb_register_client(&power_suspend_fb_notifier_block);
 
 	return 0;
 }
@@ -320,4 +365,3 @@ MODULE_AUTHOR("Paul Reioux <reioux@gmail.com> / Jean-Pierre Rasquin <yank555.lu@
 MODULE_DESCRIPTION("power_suspend - A replacement kernel PM driver for"
         "Android's deprecated early_suspend/late_resume PM driver!");
 MODULE_LICENSE("GPL v2");
-
