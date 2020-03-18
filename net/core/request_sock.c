@@ -190,7 +190,7 @@ void reqsk_fastopen_remove(struct sock *sk, struct request_sock *req,
 	 *
 	 * For more details see CoNext'11 "TCP Fast Open" paper.
 	 */
-	req->expires = jiffies + 60*HZ;
+	req->expires = jiffies + msecs_to_jiffies(60000);
 	if (fastopenq->rskq_rst_head == NULL)
 		fastopenq->rskq_rst_head = req;
 	else

@@ -133,7 +133,7 @@ loop:
 		 * if the next desired timer is more than 4 seconds in the
 		 * future then round the timer to whole seconds
 		 */
-		if (expires > 4*HZ)
+		if (expires > msecs_to_jiffies(4000))
 			expires = round_jiffies_relative(expires);
 		schedule_delayed_work(&dst_gc_work, expires);
 	}

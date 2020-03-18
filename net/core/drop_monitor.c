@@ -70,7 +70,7 @@ static DEFINE_PER_CPU(struct per_cpu_dm_data, dm_cpu_data);
 
 static int dm_hit_limit = 64;
 static int dm_delay = 1;
-static unsigned long dm_hw_check_delta = 2*HZ;
+static unsigned long dm_hw_check_delta = msecs_to_jiffies(2000);
 static LIST_HEAD(hw_stats_list);
 
 static struct sk_buff *reset_per_cpu_data(struct per_cpu_dm_data *data)
@@ -95,7 +95,7 @@ static struct sk_buff *reset_per_cpu_data(struct per_cpu_dm_data *data)
 		msg = nla_data(nla);
 		memset(msg, 0, al);
 	} else {
-		mod_timer(&data->send_timer, jiffies + HZ / 10);
+		mod_timer(&data->send_timer, jiffies + msecs_to_jiffies(100));
 	}
 
 	spin_lock_irqsave(&data->lock, flags);
@@ -174,7 +174,7 @@ static void trace_drop_common(struct sk_buff *skb, void *location)
 	msg->entries++;
 
 	if (!timer_pending(&data->send_timer)) {
-		data->send_timer.expires = jiffies + dm_delay * HZ;
+		data->send_timer.expires = jiffies + dm_delay * msecs_to_jiffies(1000);
 		add_timer(&data->send_timer);
 	}
 

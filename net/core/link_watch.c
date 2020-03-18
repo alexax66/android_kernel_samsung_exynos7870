@@ -127,7 +127,7 @@ static void linkwatch_schedule_work(int urgent)
 	}
 
 	/* If we wrap around we'll delay it by at most HZ. */
-	if (delay > HZ)
+	if (delay > msecs_to_jiffies(1000))
 		delay = 0;
 
 	/*
@@ -179,9 +179,9 @@ static void __linkwatch_run_queue(int urgent_only)
 	 * while the device qdisc is down.
 	 */
 	if (!urgent_only)
-		linkwatch_nextevent = jiffies + HZ;
+		linkwatch_nextevent = jiffies + msecs_to_jiffies(1000);
 	/* Limit wrap-around effect on delay. */
-	else if (time_after(linkwatch_nextevent, jiffies + HZ))
+	else if (time_after(linkwatch_nextevent, jiffies + msecs_to_jiffies(1000)))
 		linkwatch_nextevent = jiffies;
 
 	clear_bit(LW_URGENT, &linkwatch_flags);

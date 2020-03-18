@@ -143,7 +143,7 @@ skip:
 	}
 
 	if (!list_empty(&elist[idx].list))
-		mod_timer(&elist[idx].timer, jiffies + ((HZ/4) << idx));
+		mod_timer(&elist[idx].timer, jiffies + ((msecs_to_jiffies(250)) << idx));
 	rcu_read_unlock();
 }
 
@@ -244,7 +244,7 @@ int gen_new_estimator(struct gnet_stats_basic_packed *bstats,
 	}
 
 	if (list_empty(&elist[idx].list))
-		mod_timer(&elist[idx].timer, jiffies + ((HZ/4) << idx));
+		mod_timer(&elist[idx].timer, jiffies + ((msecs_to_jiffies(250)) << idx));
 
 	list_add_rcu(&est->list, &elist[idx].list);
 	gen_add_node(est);
