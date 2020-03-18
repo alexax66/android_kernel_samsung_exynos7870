@@ -20,7 +20,7 @@
 #include "../fimc-is-interface.h"
 #include "../include/fimc-is-hw.h"
 
-#define FIMC_IS_HW_STOP_TIMEOUT		(HZ / 4)
+#define FIMC_IS_HW_STOP_TIMEOUT		(msecs_to_jiffies(1000) / 4)
 #define FIMC_IS_HW_CORE_END		(0x20141225) /* magic number */
 #define FIMC_IS_MAX_HW_FRAME		(20)
 #define FIMC_IS_MAX_HW_FRAME_LATE	(5)

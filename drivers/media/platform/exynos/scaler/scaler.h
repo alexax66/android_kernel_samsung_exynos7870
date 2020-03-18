@@ -41,7 +41,7 @@ extern int sc_log_level;
 
 #define MODULE_NAME		"exynos5-scaler"
 #define SC_MAX_DEVS		1
-#define SC_TIMEOUT		(2 * HZ)	/* 2 seconds */
+#define SC_TIMEOUT		msecs_to_jiffies(2000)	/* 2 seconds */
 #define SC_WDT_CNT		3
 #define SC_MAX_CTRL_NUM		20
 

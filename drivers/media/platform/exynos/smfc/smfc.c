@@ -571,7 +571,7 @@ static void smfc_m2m_device_run(void *priv)
 	 * Therefore, S/W timer object is used to detect unexpected delay.
 	 */
 	if (!!enable_hwfc)
-		mod_timer(&ctx->smfc->timer, jiffies + HZ); /* 1 sec. */
+		mod_timer(&ctx->smfc->timer, jiffies + msecs_to_jiffies(1000)); /* 1 sec. */
 
 	ctx->ktime_beg = ktime_get();
 

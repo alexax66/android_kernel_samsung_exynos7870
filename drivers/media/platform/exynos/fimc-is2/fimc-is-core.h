@@ -51,10 +51,10 @@
 #include "fimc-is-vender.h"
 
 #define FIMC_IS_DRV_NAME			"exynos-fimc-is"
-#define FIMC_IS_COMMAND_TIMEOUT			(3*HZ)
-#define FIMC_IS_STARTUP_TIMEOUT			(3*HZ)
-#define FIMC_IS_SHUTDOWN_TIMEOUT		(10*HZ)
-#define FIMC_IS_FLITE_STOP_TIMEOUT		(3*HZ)
+#define FIMC_IS_COMMAND_TIMEOUT			msecs_to_jiffies(3000)
+#define FIMC_IS_STARTUP_TIMEOUT			msecs_to_jiffies(3000)
+#define FIMC_IS_SHUTDOWN_TIMEOUT		msecs_to_jiffies(10000)
+#define FIMC_IS_FLITE_STOP_TIMEOUT		msecs_to_jiffies(3000)
 
 #define FIMC_IS_SENSOR_MAX_ENTITIES		(1)
 #define FIMC_IS_SENSOR_PAD_SOURCE_FRONT		(0)
