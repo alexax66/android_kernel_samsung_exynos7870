@@ -296,7 +296,7 @@ extern uint64 osl_sysuptime_us(void);
 #define OSL_SYSUPTIME()		((uint32)jiffies_to_msecs(jiffies))
 #define OSL_SYSUPTIME_US()	osl_sysuptime_us()
 #else
-#define OSL_SYSUPTIME()		((uint32)jiffies * (1000 / HZ))
+#define OSL_SYSUPTIME()		((uint32)msecs_to_jiffies(1000))
 #error "OSL_SYSUPTIME_US() may need to be defined"
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(2, 4, 29) */
 extern void osl_get_localtime(uint64 *sec, uint64 *usec);

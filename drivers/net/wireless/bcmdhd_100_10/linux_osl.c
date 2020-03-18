@@ -1927,7 +1927,7 @@ osl_timer_add(osl_t *osh, osl_timer_t *t, uint32 ms, bool periodic)
 	if (periodic) {
 		printf("Periodic timers are not supported by Linux timer apis\n");
 	}
-	t->timer->expires = jiffies + ms*HZ/1000;
+	t->timer->expires = jiffies + ms*msecs_to_jiffies(1000)/1000;
 
 	add_timer(t->timer);
 
@@ -1945,7 +1945,7 @@ osl_timer_update(osl_t *osh, osl_timer_t *t, uint32 ms, bool periodic)
 		printf("Periodic timers are not supported by Linux timer apis\n");
 	}
 	t->set = TRUE;
-	t->timer->expires = jiffies + ms*HZ/1000;
+	t->timer->expires = jiffies + ms*msecs_to_jiffies(1000)/1000;
 
 	mod_timer(t->timer, t->timer->expires);
 
