@@ -863,7 +863,7 @@ static void perf_cpu_hrtimer_restart(struct perf_cpu_context *cpuctx)
 	if (hrtimer_active(hr))
 		return;
 
-	if (!hrtimer_callback_running(hr))
+	if (!hrtimer_callback_running_relaxed(hr))
 		__hrtimer_start_range_ns(hr, cpuctx->hrtimer_interval,
 					 0, HRTIMER_MODE_REL_PINNED, 0);
 }
