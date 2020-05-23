@@ -229,7 +229,7 @@ int perf_cpu_time_max_percent_handler(struct ctl_table *table, int write,
 				void __user *buffer, size_t *lenp,
 				loff_t *ppos)
 {
-	int ret = proc_dointvec(table, write, buffer, lenp, ppos);
+	int ret = proc_dointvec_minmax(table, write, buffer, lenp, ppos);
 
 	if (ret || !write)
 		return ret;
@@ -7719,29 +7719,6 @@ SYSCALL_DEFINE5(perf_event_open,
 				move_group = 0;
 			}
 		}
-
-		/*
-		 * Check if we raced against another sys_perf_event_open() call
-		 * moving the software group underneath us.
-		 */
-		if (!(group_leader->group_flags & PERF_GROUP_SOFTWARE)) {
-			/*
-			 * If someone moved the group out from under us, check
-			 * if this new event wound up on the same ctx, if so
-			 * its the regular !move_group case, otherwise fail.
-			 */
-			if (gctx != ctx) {
-				err = -EINVAL;
-				goto err_locked;
-			} else {
-				perf_event_ctx_unlock(group_leader, gctx);
-				move_group = 0;
-			}
-		}
-		/* 
-		 * See perf_event_ctx_lock() for comments on the details
-		 * of swizzling perf_event::ctx.
-		 */
 
 		/*
 		 * See perf_event_ctx_lock() for comments on the details

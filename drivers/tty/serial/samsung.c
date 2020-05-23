@@ -122,6 +122,8 @@ EXPORT_SYMBOL_GPL(s3c2410_serial_wake_peer);
 #define UART_LOOPBACK_MODE	(0x1 << 0)
 #define UART_DBG_MODE		(0x1 << 1)
 
+
+void s3c24xx_serial_rx_fifo_wait(void);
 /* Allocate 800KB of buffer for UART logging */
 #define LOG_BUFFER_SIZE		(0xC8000)
 
@@ -1647,6 +1649,46 @@ static inline struct s3c24xx_serial_drv_data *s3c24xx_get_driver_data(
 			platform_get_device_id(pdev)->driver_data;
 }
 
+void s3c24xx_serial_rx_fifo_wait(void)
+{
+   struct s3c24xx_uart_port *ourport;
+   struct uart_port *port;
+   unsigned int fifo_stat;
+   unsigned long wait_time;
+   unsigned int fifo_count;
+
+   fifo_count = 0;
+
+   list_for_each_entry(ourport, &drvdata_list, node) {
+       if (ourport->port.line != CONFIG_S3C_LOWLEVEL_UART_PORT)
+               continue;
+
+       port = &ourport->port;
+       fifo_stat = rd_regl(port, S3C2410_UFSTAT);
+       fifo_count = s3c24xx_serial_rx_fifocnt(ourport, fifo_stat);
+       if (fifo_count) {
+               uart_clock_enable(ourport);
+               __clear_bit(S3C64XX_UINTM_RXD, portaddrl(port, S3C64XX_UINTM));
+               uart_clock_disable(ourport);
+               rx_enabled(port) = 1;
+       }
+
+       wait_time = jiffies + HZ;
+       do {
+               port = &ourport->port;
+               fifo_stat = rd_regl(port, S3C2410_UFSTAT);
+               cpu_relax();
+       } while ( s3c24xx_serial_rx_fifocnt(ourport, fifo_stat) && time_before(jiffies, wait_time));
+
+       if (rx_enabled(port))
+               s3c24xx_serial_stop_rx(port);
+   }
+
+}
+
+EXPORT_SYMBOL_GPL(s3c24xx_serial_rx_fifo_wait);
+
+
 void s3c24xx_serial_fifo_wait(void)
 {
 	struct s3c24xx_uart_port *ourport;
@@ -1825,6 +1867,11 @@ static int s3c24xx_serial_probe(struct platform_device *pdev)
 	int port_index = probe_index;
 
 	dbg("s3c24xx_serial_probe(%p) %d\n", pdev, index);
+
+        if (index >= ARRAY_SIZE(s3c24xx_serial_ports)) {
+                dev_err(&pdev->dev, "serial%d out of range\n", index);
+                return -EINVAL;
+        }
 
 	if (pdev->dev.of_node) {
 		ret = of_alias_get_id(pdev->dev.of_node, "uart");
@@ -2060,6 +2107,8 @@ static int s3c24xx_serial_suspend(struct device *dev)
 	struct s3c24xx_uart_port *ourport = to_ourport(port);
 
 	if (port) {
+		udelay(300);//delay for sfr update
+		s3c24xx_serial_rx_fifo_wait();
 		uart_suspend_port(&s3c24xx_uart_drv, port);
 		if (ourport->dbg_mode & UART_DBG_MODE)
 			dev_err(dev, "UART suspend notification for tty framework.\n");
@@ -2507,27 +2556,30 @@ static struct s3c24xx_serial_drv_data s5pv210_serial_drv_data = {
 #endif
 
 #if defined(CONFIG_ARCH_EXYNOS)
+#define EXYNOS_COMMON_SERIAL_DRV_DATA				\
+	.info = &(struct s3c24xx_uart_info) {			\
+		.name		= "Samsung Exynos UART",	\
+		.type		= PORT_S3C6400,			\
+		.has_divslot	= 1,				\
+		.rx_fifomask	= S5PV210_UFSTAT_RXMASK,	\
+		.rx_fifoshift	= S5PV210_UFSTAT_RXSHIFT,	\
+		.rx_fifofull	= S5PV210_UFSTAT_RXFULL,	\
+		.tx_fifofull	= S5PV210_UFSTAT_TXFULL,	\
+		.tx_fifomask	= S5PV210_UFSTAT_TXMASK,	\
+		.tx_fifoshift	= S5PV210_UFSTAT_TXSHIFT,	\
+		.def_clk_sel	= S3C2410_UCON_CLKSEL0,		\
+		.num_clks	= 1,				\
+		.clksel_mask	= 0,				\
+		.clksel_shift	= 0,				\
+	},							\
+	.def_cfg = &(struct s3c2410_uartcfg) {			\
+		.ucon		= S5PV210_UCON_DEFAULT,		\
+		.ufcon		= S5PV210_UFCON_DEFAULT,	\
+		.has_fracval	= 1,				\
+	}							\
+
 static struct s3c24xx_serial_drv_data exynos4210_serial_drv_data = {
-	.info = &(struct s3c24xx_uart_info) {
-		.name		= "Samsung Exynos4 UART",
-		.type		= PORT_S3C6400,
-		.has_divslot	= 1,
-		.rx_fifomask	= S5PV210_UFSTAT_RXMASK,
-		.rx_fifoshift	= S5PV210_UFSTAT_RXSHIFT,
-		.rx_fifofull	= S5PV210_UFSTAT_RXFULL,
-		.tx_fifofull	= S5PV210_UFSTAT_TXFULL,
-		.tx_fifomask	= S5PV210_UFSTAT_TXMASK,
-		.tx_fifoshift	= S5PV210_UFSTAT_TXSHIFT,
-		.def_clk_sel	= S3C2410_UCON_CLKSEL0,
-		.num_clks	= 1,
-		.clksel_mask	= 0,
-		.clksel_shift	= 0,
-	},
-	.def_cfg = &(struct s3c2410_uartcfg) {
-		.ucon		= S5PV210_UCON_DEFAULT,
-		.ufcon		= S5PV210_UFCON_DEFAULT,
-		.has_fracval	= 1,
-	},
+	EXYNOS_COMMON_SERIAL_DRV_DATA,
 	.fifosize = { 256, 64, 16, 16 },
 };
 

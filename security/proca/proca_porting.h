@@ -19,6 +19,11 @@
 #define __LINUX_PROCA_PORTING_H
 
 #include <linux/version.h>
+#include <linux/memory.h>
+#include <linux/fs.h>
+#include <linux/mm.h>
+#include <linux/rcupdate.h>
+#include <linux/atomic.h>
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0)
 
@@ -37,6 +42,15 @@ __vfs_getxattr(struct dentry *dentry, struct inode *inode, const char *name,
 		return -EOPNOTSUPP;
 }
 
+#endif
+
+#if LINUX_VERSION_CODE > KERNEL_VERSION(4, 10, 17)
+/* Some linux headers are moved.
+ * Since Kernel 4.11 get_task_struct moved to sched/ folder.
+ */
+#include <linux/sched/task.h>
+#else
+#include <linux/sched.h>
 #endif
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 4, 21)
@@ -58,10 +72,117 @@ __vfs_getxattr(struct dentry *dentry, struct inode *inode, const char *name,
 #define security_add_hooks(hooks, count, name)
 #else
 #define LINUX_LSM_SUPPORTED
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0)
+#include <linux/lsm_hooks.h>
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 10, 0)
 #define security_add_hooks(hooks, count, name) security_add_hooks(hooks, count)
 #endif
-#include <linux/lsm_hooks.h>
+#endif
+
+/*
+ * VA_BITS is present only on 64 bit kernels
+ */
+#if defined(CONFIG_ARM)
+#define VA_BITS 30
+#endif
+
+/*
+ * VA_START macro is backported to SDM450 kernel (3.18.120)
+ */
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 4, 0) && \
+	!(defined(CONFIG_ARCH_SDM450) && defined(CONFIG_ARM64))
+#define VA_START		(UL(0xffffffffffffffff) - \
+	(UL(1) << VA_BITS) + 1)
+#endif
+
+/*
+ * KASLR is backported to 4.4 kernels
+ */
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 4, 0)
+
+static inline uintptr_t get_kimage_vaddr(void)
+{
+	return PAGE_OFFSET;
+}
+
+static inline uintptr_t get_kimage_voffset(void)
+{
+	return get_kimage_vaddr() - virt_to_phys((void *)get_kimage_vaddr());
+}
+
+#else
+
+static inline u64 get_kimage_vaddr(void)
+{
+	return kimage_vaddr;
+}
+
+static inline u64 get_kimage_voffset(void)
+{
+	return kimage_voffset;
+}
+#endif
+
+#ifndef OVERLAYFS_SUPER_MAGIC
+#define OVERLAYFS_SUPER_MAGIC 0x794c7630
+#endif
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 4, 8)
+static inline struct dentry *d_real_comp(struct dentry *dentry)
+{
+	return dentry;
+}
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(4, 8, 0)
+static inline struct dentry *d_real_comp(struct dentry *dentry)
+{
+	return d_real(dentry);
+}
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0)
+static inline struct dentry *d_real_comp(struct dentry *dentry)
+{
+	return d_real(dentry, NULL, 0);
+}
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(4, 19, 0)
+static inline struct dentry *d_real_comp(struct dentry *dentry)
+{
+	return d_real(dentry, NULL, 0, 0);
+}
+#else
+static inline struct dentry *d_real_comp(struct dentry *dentry)
+{
+	return d_real(dentry, NULL);
+}
+#endif
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 4, 22)
+
+#define get_file_rcu(x) atomic_long_inc_not_zero(&(x)->f_count)
+
+static inline struct file *_get_mm_exe_file(struct mm_struct *mm)
+{
+	struct file *exe_file;
+
+	rcu_read_lock();
+	exe_file = rcu_dereference(mm->exe_file);
+	if (exe_file && !get_file_rcu(exe_file))
+		exe_file = NULL;
+	rcu_read_unlock();
+	return exe_file;
+}
+
+static inline struct file *get_task_exe_file(struct task_struct *task)
+{
+	struct file *exe_file = NULL;
+	struct mm_struct *mm;
+
+	task_lock(task);
+	mm = task->mm;
+	if (mm) {
+		if (!(task->flags & PF_KTHREAD))
+			exe_file = _get_mm_exe_file(mm);
+	}
+	task_unlock(task);
+	return exe_file;
+}
 #endif
 
 #endif /* __LINUX_PROCA_PORTING_H */

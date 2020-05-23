@@ -192,6 +192,7 @@ obj-$(CONFIG_TRUSTONIC_TEE)	+= gud/
 
 # FIVE TEE driver
 obj-$(CONFIG_FIVE_TEE_DRIVER)	+= five/
+obj-$(CONFIG_ICD)		+= security/samsung/icdrv/
 
 #haptic driver
 obj-$(CONFIG_ANDROID_TIMED_OUTPUT)	+= motor/

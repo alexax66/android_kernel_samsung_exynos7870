@@ -842,13 +842,13 @@ static int copy_to_user_state_extra(struct xfrm_state *x,
 		if (ret)
 			goto out;
 	}
-	if (x->security)
-		ret = copy_sec_ctx(x->security, skb);
 	if (x->props.output_mark) {
 		ret = nla_put_u32(skb, XFRMA_OUTPUT_MARK, x->props.output_mark);
 		if (ret)
 			goto out;
 	}
+	if (x->security)
+		ret = copy_sec_ctx(x->security, skb);
 out:
 	return ret;
 }
@@ -1321,7 +1321,7 @@ static int verify_newpolicy_info(struct xfrm_userpolicy_info *p)
 	ret = verify_policy_dir(p->dir);
 	if (ret)
 		return ret;
-	if (p->index && ((p->index & XFRM_POLICY_MAX) != p->dir))
+	if (p->index && (xfrm_policy_id2dir(p->index) != p->dir))
 		return -EINVAL;
 
 	return 0;

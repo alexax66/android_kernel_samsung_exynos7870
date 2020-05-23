@@ -1239,6 +1239,19 @@ int do_send_sig_info(int sig, struct siginfo *info, struct task_struct *p,
 {
 	unsigned long flags;
 	int ret = -ESRCH;
+#ifdef CONFIG_OLAF_SUPPORT
+	struct task_struct *t;
+	if ((sig == SIGKILL || sig == SIGTERM || sig == SIGABRT || sig == SIGQUIT)) {
+		for_each_thread(p, t) {
+			if (!strncmp(t->comm, "Jit ", strlen("Jit "))) {
+				if (t->flags & PF_FROZEN) {
+					t->flags |= PF_NOFREEZE;
+					__thaw_task(t);
+				}
+			}
+		}
+	}
+#endif
 
 	if (lock_task_sighand(p, &flags)) {
 		ret = send_signal(sig, info, p, group);
@@ -1476,6 +1489,10 @@ static int kill_something_info(int sig, struct siginfo *info, pid_t pid)
 		rcu_read_unlock();
 		return ret;
 	}
+
+	/* -INT_MIN is undefined.  Exclude this case to avoid a UBSAN warning */
+	if (pid == INT_MIN)
+		return -ESRCH;
 
 	read_lock(&tasklist_lock);
 	if (pid != -1) {
@@ -2283,6 +2300,8 @@ relock:
 	if (signal_group_exit(signal)) {
 		ksig->info.si_signo = signr = SIGKILL;
 		sigdelset(&current->pending.signal, SIGKILL);
+		trace_signal_deliver(SIGKILL, SEND_SIG_NOINFO,
+				&sighand->action[SIGKILL - 1]);
 		recalc_sigpending();
 		goto fatal;
 	}

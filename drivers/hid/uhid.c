@@ -12,7 +12,6 @@
 
 #include <linux/atomic.h>
 #include <linux/compat.h>
-#include <linux/cred.h>
 #include <linux/device.h>
 #include <linux/fs.h>
 #include <linux/hid.h>
@@ -26,7 +25,6 @@
 #include <linux/uhid.h>
 #include <linux/wait.h>
 #include <linux/fb.h>
-#include <linux/uaccess.h>
 
 #define UHID_NAME	"uhid"
 #define UHID_BUFSIZE	32
@@ -195,7 +193,7 @@ static int __uhid_report_queue_and_wait(struct uhid_device *uhid,
 
 	ret = wait_event_interruptible_timeout(uhid->report_wait,
 				!uhid->report_running || !uhid->running,
-				10/*5 * HZ*/);  // from 5000 to 10 due to BT stuck when connecting apple magic mouse during a2dp playing
+				5 * HZ);
 	if (!ret || !uhid->running || uhid->report_running)
 		ret = -EIO;
 	else if (ret < 0)
@@ -739,17 +737,6 @@ static ssize_t uhid_char_write(struct file *file, const char __user *buffer,
 
 	switch (uhid->input_buf.type) {
 	case UHID_CREATE:
-		/*
-		 * 'struct uhid_create_req' contains a __user pointer which is
-		 * copied from, so it's unsafe to allow this with elevated
-		 * privileges (e.g. from a setuid binary) or via kernel_write().
-		 */
-		if (file->f_cred != current_cred() || uaccess_kernel()) {
-			pr_err_once("UHID_CREATE from different security context by process %d (%s), this is not allowed.\n",
-				    task_tgid_vnr(current), current->comm);
-			ret = -EACCES;
-			goto unlock;
-		}
 		ret = uhid_dev_create(uhid, &uhid->input_buf);
 		break;
 	case UHID_CREATE2:

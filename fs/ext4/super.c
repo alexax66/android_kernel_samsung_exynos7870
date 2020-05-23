@@ -732,10 +732,10 @@ __acquires(bitlock)
 	}
 
 	ext4_unlock_group(sb, grp);
+	ext4_commit_super(sb, 1);
 	ext4_handle_error(sb, page_buf);
 	if (page_buf)
 		free_page((unsigned long)page_buf);
-	ext4_commit_super(sb, 1);
 	/*
 	 * We only get here in the ERRORS_RO case; relocking the group
 	 * may be dangerous, but nothing bad will happen since the
@@ -4590,8 +4590,10 @@ cantfind_ext4:
 	/* for debugging, sangwoo2.lee */
 	/* If you wanna use the flag 'MS_SILENT', call */
 	/* 'print_bh' function within below 'if'. */
-	printk(KERN_ERR "printing data of superblock-bh\n");
-	print_bh(sb, bh, 0, EXT4_BLOCK_SIZE(sb));
+	if (!silent) {
+		printk(KERN_ERR "printing data of superblock-bh\n");
+		print_bh(sb, bh, 0, EXT4_BLOCK_SIZE(sb));
+	}
 	/* for debugging */
 
 	if (!silent)

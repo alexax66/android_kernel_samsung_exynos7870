@@ -602,6 +602,27 @@ static inline void ufshcd_hba_start(struct ufs_hba *hba)
 	ufshcd_writel(hba, CONTROLLER_ENABLE, REG_CONTROLLER_ENABLE);
 }
 
+#ifdef CUSTOMIZE_UPIU_FLAGS
+SIO_PATCH_VERSION(UPIU_customize, 1, 0, "");
+
+/* IOPP-ufs_cp-v1.0.4.4 */
+static void set_customized_upiu_flags(struct ufshcd_lrb *lrbp, u32 *upiu_flags)
+{
+	if (lrbp->command_type == UTP_CMD_TYPE_SCSI) {
+		if (req_op(lrbp->cmd->request) == REQ_OP_WRITE) {
+			if (req_op(lrbp->cmd->request) == REQ_OP_FLUSH)
+				*upiu_flags |= UPIU_TASK_ATTR_HEADQ;
+			else if (req_op(lrbp->cmd->request) == REQ_OP_DISCARD)
+				*upiu_flags |= UPIU_TASK_ATTR_ORDERED;
+			else if (lrbp->cmd->request->cmd_flags & REQ_SYNC)
+				*upiu_flags |= UPIU_COMMAND_PRIORITY_HIGH;
+		} else {
+			*upiu_flags |= UPIU_COMMAND_PRIORITY_HIGH;
+		}
+	}
+}
+#endif
+
 /**
  * ufshcd_is_hba_active - Get controller state
  * @hba: per adapter instance
@@ -1373,6 +1394,8 @@ static void ufshcd_prepare_req_desc_hdr(struct ufshcd_lrb *lrbp,
 		data_direction = UTP_NO_DATA_TRANSFER;
 		*upiu_flags = UPIU_CMD_FLAGS_NONE;
 	}
+
+	set_customized_upiu_flags(lrbp, upiu_flags);
 
 	dword_0 = data_direction | (lrbp->command_type
 				<< UPIU_COMMAND_TYPE_OFFSET);
@@ -3710,10 +3733,10 @@ static void __ufshcd_transfer_req_compl(struct ufs_hba *hba, int reason)
 					completion = ktime_get();
 					delta_us = ktime_us_delta(completion,
 						  req->lat_hist_io_start);
-					/* rq_data_dir() => true if WRITE */
-					blk_update_latency_hist(&hba->io_lat_s,
-						(rq_data_dir(req) == READ),
-						delta_us);
+					blk_update_latency_hist(
+						(rq_data_dir(req) == READ) ?
+						&hba->io_lat_read :
+						&hba->io_lat_write, delta_us);
 				}
 			}
 			/* Do not touch lrbp after scsi done */
@@ -6144,9 +6167,10 @@ latency_hist_store(struct device *dev, struct device_attribute *attr,
 
 	if (kstrtol(buf, 0, &value))
 		return -EINVAL;
-	if (value == BLK_IO_LAT_HIST_ZERO)
-		blk_zero_latency_hist(&hba->io_lat_s);
-	else if (value == BLK_IO_LAT_HIST_ENABLE ||
+	if (value == BLK_IO_LAT_HIST_ZERO) {
+		memset(&hba->io_lat_read, 0, sizeof(hba->io_lat_read));
+		memset(&hba->io_lat_write, 0, sizeof(hba->io_lat_write));
+	} else if (value == BLK_IO_LAT_HIST_ENABLE ||
 		 value == BLK_IO_LAT_HIST_DISABLE)
 		hba->latency_hist_enabled = value;
 	return count;
@@ -6157,8 +6181,14 @@ latency_hist_show(struct device *dev, struct device_attribute *attr,
 		  char *buf)
 {
 	struct ufs_hba *hba = dev_get_drvdata(dev);
+	size_t written_bytes;
 
-	return blk_latency_hist_show(&hba->io_lat_s, buf);
+	written_bytes = blk_latency_hist_show("Read", &hba->io_lat_read,
+			buf, PAGE_SIZE);
+	written_bytes += blk_latency_hist_show("Write", &hba->io_lat_write,
+			buf + written_bytes, PAGE_SIZE - written_bytes);
+
+	return written_bytes;
 }
 
 static DEVICE_ATTR(latency_hist, S_IRUGO | S_IWUSR,

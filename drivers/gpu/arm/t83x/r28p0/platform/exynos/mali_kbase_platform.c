@@ -175,6 +175,7 @@ static int gpu_validate_attrib_data(struct exynos_context *platform)
 	platform->gpu_min_clock = data == 0 ? 160 : (u32) data;
 	data = gpu_get_attrib_data(attrib, GPU_MIN_CLOCK_LIMIT);
 	platform->gpu_min_clock_limit = data == 0 ? 260 : (u32) data;
+
 	data = gpu_get_attrib_data(attrib, GPU_DVFS_BL_CONFIG_CLOCK);
 	platform->gpu_dvfs_config_clock = data == 0 ? 266 : (u32) data;
 	data = gpu_get_attrib_data(attrib, GPU_DVFS_START_CLOCK);
@@ -600,6 +601,8 @@ static int exynos_secure_mem_enable(struct kbase_device *kbdev, int ion_fd, u64 
 
 		flush_all_cpu_caches();
 
+		dev_warn(kbdev->dev, "[G3D] SECURE_CRC_FLAGS %llx, input_flags %llx, CRC_CHECK_MASK %X\n",
+			SECURE_CRC_FLAGS, input_flags, CRC_CHECK_MASK);
 		if (input_flags == SECURE_CRC_FLAGS) {
 			reg->flags |= KBASE_REG_SECURE_CRC | KBASE_REG_SECURE;
 		} else {

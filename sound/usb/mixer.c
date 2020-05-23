@@ -1347,6 +1347,8 @@ static void build_feature_ctl(struct mixer_build *state, void *raw_desc,
 		}
 	}
 
+	snd_usb_mixer_fu_apply_quirk(state->mixer, cval, unitid, kctl);
+
 	range = (cval->max - cval->min) / cval->res;
 	/*
 	 * Are there devices with volume range more than 255? I use a bit more
@@ -2101,6 +2103,8 @@ static int parse_audio_selector_unit(struct mixer_build *state, int unitid,
 	kctl = snd_ctl_new1(&mixer_selectunit_ctl, cval);
 	if (! kctl) {
 		usb_audio_err(state->chip, "cannot malloc kcontrol\n");
+		for (i = 0; i < desc->bNrInPins; i++)
+			kfree(namelist[i]);
 		kfree(namelist);
 		kfree(cval);
 		return -ENOMEM;

@@ -305,7 +305,7 @@ struct tcp_sock {
 
 /* Receiver queue space */
 	struct {
-		int	space;
+		u32	space;
 		u32	seq;
 		u32	time;
 	} rcvq_space;
@@ -395,5 +395,8 @@ static inline int fastopen_init_queue(struct sock *sk, int backlog)
 	queue->fastopenq->max_qlen = backlog;
 	return 0;
 }
+
+int tcp_skb_shift(struct sk_buff *to, struct sk_buff *from, int pcount,
+		  int shiftlen);
 
 #endif	/* _LINUX_TCP_H */

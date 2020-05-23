@@ -54,6 +54,8 @@ void tcp_time_wait(struct sock *sk, int state, int timeo);
 
 #define MAX_TCP_HEADER	(128 + MAX_HEADER)
 #define MAX_TCP_OPTION_SPACE 40
+#define TCP_MIN_SND_MSS		48
+#define TCP_MIN_GSO_SIZE	(TCP_MIN_SND_MSS - MAX_TCP_OPTION_SPACE)
 
 /* 
  * Never offer a window over 32767 without using window scaling. Some
@@ -137,7 +139,6 @@ void tcp_time_wait(struct sock *sk, int state, int timeo);
 						 * valid RTT sample has been acquired,
 						 * most likely due to retrans in 3WHS.
 						 */
-
 #define TCP_DELACK_SEG          1
 
 #define TCP_RESOURCE_PROBE_INTERVAL ((unsigned)(HZ/2U)) /* Maximal interval between probes
@@ -382,7 +383,6 @@ void tcp_twsk_destructor(struct sock *sk);
 ssize_t tcp_splice_read(struct socket *sk, loff_t *ppos,
 			struct pipe_inode_info *pipe, size_t len,
 			unsigned int flags);
-
 /* sysctl master controller */
 extern int tcp_use_userconfig_sysctl_handler(struct ctl_table *, int,
 				void __user *, size_t *, loff_t *);
@@ -1399,6 +1399,8 @@ struct tcp_fastopen_context {
 	struct rcu_head		rcu;
 };
 
+static inline void tcp_init_send_head(struct sock *sk);
+
 /* write queue abstraction */
 static inline void tcp_write_queue_purge(struct sock *sk)
 {
@@ -1406,6 +1408,7 @@ static inline void tcp_write_queue_purge(struct sock *sk)
 
 	while ((skb = __skb_dequeue(&sk->sk_write_queue)) != NULL)
 		sk_wmem_free_skb(sk, skb);
+	tcp_init_send_head(sk);
 	sk_mem_reclaim(sk);
 	tcp_clear_all_retrans_hints(tcp_sk(sk));
 	inet_csk(sk)->icsk_backoff = 0;
