@@ -10,6 +10,8 @@
 #include <linux/module.h>
 #include <linux/err.h>
 #include <linux/slab.h>
+#include <linux/uaccess.h>
+#include <linux/fs.h>
 #include <linux/workqueue.h>
 #include <linux/leds.h>
 #include <linux/gpio.h>
@@ -23,69 +25,16 @@
 
 #include "leds-s2mu005-rgb.h"
 
-#define S2MU005_RGB_LED_DRIVER_NAME 	"leds-s2mu005-rgb"
-
-#define SEC_LED_SPECIFIC
-//#define S2MU005_ENABLE_INDIVIDUAL_CURRENT
-
-#ifdef SEC_LED_SPECIFIC
-/**
-* s2mu005_pattern - enum constants for different fixed displayable LED pattern 
-**/
-enum s2mu005_pattern {
-	PATTERN_OFF,
-	CHARGING,
-	CHARGING_ERR,
-	MISSED_NOTI,
-	LOW_BATTERY,
-	FULLY_CHARGED,
-	POWERING,
-};
-
-enum s2mu005_LED {
-	LED_B,
-	LED_G,
-	LED_R,
-	LED_MAX
-};
-#endif // SEC_LED_SPECIFIC
-
-/**
-* s2mu005_rgb_led - structure to hold all service led related driver data 
-* @led_dynamic_current - holds max permissible (tuned) LED current 
-*          in the present configuration
-* @led_max_current - holds max current of each LED for normal mode
-* @led_low_current - holds max current of each LED for lowpower mode
-* @led_lowpower_mode - holds whether led is in low power mode
-* @type - TBD
-* @color - holds presently displaying color on SVC LED.
-* @led_on_time - holds blink on time
-* @led_off_time - holds blink off time
-* @mode - current SEC LED pattern displaying on the phone
-* @i2c - holds the parent driver's (PMIC's struct s2mu005_dev)'s I2C client 
-*         reference
-* @blink_work - work queue to handle the request from user space
-* @led_dev - pointer to hold the device attribute to communicate through sysfs
-**/
-struct s2mu005_rgb_led{
-	u8 led_dynamic_current[LED_MAX];
-	u8 led_max_current[LED_MAX];
-	u8 led_low_current[LED_MAX];  
-	u8 led_lowpower_mode;		
-	u32	color;
-	u32 led_on_time;
-    u32 led_off_time;
-	enum s2mu005_pattern mode;
-	struct i2c_client *i2c;
-	struct work_struct blink_work;
-	struct device *led_dev;
-	//struct s2mu005_dev   s2mu005_dev;
-};
-
 /**
 * g_s2mu005_rgb_led_data - Holds all service led related driver data  
 **/
 struct s2mu005_rgb_led *g_s2mu005_rgb_led_data;
+
+
+/**
+* lcdtype - extending the scope of lcdtype to match LED current tuning based on phone color.  
+**/
+extern unsigned int lcdtype;
 
 
 /**
@@ -118,6 +67,9 @@ static int s2mu005_rgb_leds_write_all(u32 color, long int on_time, long int off_
     u32 ramp_up_time;
     u32 ramp_down_time;
     u32 stable_on_time;
+	u32 stable_on_time_value;
+	u32 ramp_up_time_value;
+	//u32 ramp_down_time_value;
     u32 temp;
 #ifdef S2MU005_ENABLE_INDIVIDUAL_CURRENT		
     u8 mode = 0;
@@ -206,14 +158,23 @@ static int s2mu005_rgb_leds_write_all(u32 color, long int on_time, long int off_
 			temp = 2200;
 
 		if(temp <= 800)
-			ramp_up_time /= 100;
+		{	
+			ramp_up_time = temp/100;
+			ramp_up_time_value = ramp_up_time*100; 
+		}
 		else if(temp <= 2200)
+		{
 			ramp_up_time = ((temp - 800)/200) + 8;
+			ramp_up_time_value = (ramp_up_time-8)*200+800;
+		}	
 		else
+		{
 			ramp_up_time = 0xF;
+			ramp_up_time_value = 2200;
+		}
 
 		ramp_down_time = ramp_up_time;
-		stable_on_time = on_time - (temp << 2);
+		stable_on_time_value = on_time - (ramp_up_time_value << 1);
 	}
 
 	temp  = (ramp_up_time << 4) | ramp_down_time;
@@ -225,6 +186,17 @@ static int s2mu005_rgb_leds_write_all(u32 color, long int on_time, long int off_
 	// Write LED3 Ramp up and down
 	s2mu005_rgb_write_reg(S2MU005_LED3_RAMP_REG, temp);
 
+	if(stable_on_time_value > 3250)
+		stable_on_time_value = 3250;
+	if(stable_on_time_value <= 500)
+	{
+		stable_on_time = (stable_on_time_value-100)/100;
+	}
+	else 
+	{
+		stable_on_time = (stable_on_time_value-500)/250 +4;
+	}
+	
 	temp  = (stable_on_time<<4)|off_time ;
 
 	// Write LED1 Duration
@@ -244,19 +216,113 @@ static int s2mu005_rgb_leds_write_all(u32 color, long int on_time, long int off_
     return 0;
 }
 
-#if 0
+#ifdef CONFIG_OF
 /**
 * s2mu005_rgb_led_parse_dt - parses hw details from dts
 **/
 static int s2mu005_rgb_led_parse_dt(struct platform_device *dev, struct s2mu005_rgb_led *data)
 {
+	struct device_node *np;
+	//const u32 *prop;
+	int ret, i;
+	struct s2mu005_led_tuning_table *pled_tuning_table;
+	u32 table_size;
+	struct s2mu005_dev *s2mu005 = dev_get_drvdata(dev->dev.parent);
+	
 
-	//TBD : yet to register led class
+	if(unlikely(!dev->dev.parent->of_node))
+	{
+		dev_err(&dev->dev, "[SVC LED] err: could not parse parent-node\n");
+		return -ENODEV;
+	}
+	
+	if(unlikely(!(np = of_find_node_by_name(dev->dev.parent->of_node, "leds-rgb"))))
+	{
+		dev_err(&dev->dev, "[SVC LED] err: could not parse sub-node\n");
+		return -ENODEV;
+	}	
+	
+	//prop = of_get_property(np, "led_current_tuning", &size);
+	
+	if(unlikely(((ret = of_property_read_u32(np, "led_current_tuning_count", &table_size)))))
+	{
+		dev_err(&dev->dev, "[SVC LED] err: error in parsing tuning table\n");
+		return -ENODEV;
+	}
+	else
+	{	
+		dev_err(&dev->dev, "[SVC LED] Table Size: %hx\n", table_size);
+		
+		if(table_size == 0)
+		{
+			dev_err(&dev->dev, "[SVC LED] Window color based tuning is not available: %hx\n", table_size);
+			return -ENODEV;
+		}
+		
+		if(unlikely(!( pled_tuning_table = devm_kzalloc(s2mu005->dev,
+				sizeof(struct s2mu005_led_tuning_table) * table_size, GFP_KERNEL)))) {
+			dev_err(&dev->dev, "[SVC LED] err: failed to allocate for tuning table\n");
+			return -ENOMEM;
+		}
+		
+		if(unlikely(((ret = of_property_read_u32_array(np, "led_current_tuning", \
+				(u32 *)pled_tuning_table, 
+				(sizeof(struct s2mu005_led_tuning_table)/sizeof(u32))* table_size)))))
+		{
+			dev_err(&dev->dev, "[SVC LED] err: error in parsing tuning table\n");
+			devm_kfree(s2mu005->dev, pled_tuning_table);
+			return -ENODEV;			
+		}
+		
+		dev_err(&dev->dev, "[SVC LED] Tuning Table:\n==============\n");
+		for(i = 0; i < table_size; i++)
+		{
+			dev_err(&dev->dev, "lcdtype:%x\n", pled_tuning_table[i].lcd_type);
+			dev_err(&dev->dev, "led_max_current:%d %d %d\n", \
+				pled_tuning_table[i].b_max_current,
+				pled_tuning_table[i].g_max_current,
+				pled_tuning_table[i].r_max_current
+				);
+			dev_err(&dev->dev, "led_low_current:%d %d %d\n", \
+				pled_tuning_table[i].b_lowpower_current,
+				pled_tuning_table[i].g_lowpower_current,
+				pled_tuning_table[i].r_lowpower_current
+				);
+		}
+		
+		for(i = 0; i < table_size; i++)
+		{
+			if(pled_tuning_table[i].lcd_type == lcdtype)
+			{
+				break;
+			}
+			
+		}
+		if(i == table_size) 
+		{ 
+			/* If no LCD match is found by default take the first entry in the tuning table */
+			i = 0;
+		}
+		
+		g_s2mu005_rgb_led_data->led_max_current[LED_B] = 
+					pled_tuning_table[i].b_max_current;	
+		g_s2mu005_rgb_led_data->led_max_current[LED_G] = 
+					pled_tuning_table[i].g_max_current;
+		g_s2mu005_rgb_led_data->led_max_current[LED_R] = 
+					pled_tuning_table[i].r_max_current;
+		g_s2mu005_rgb_led_data->led_low_current[LED_B] = 
+					pled_tuning_table[i].b_lowpower_current;
+		g_s2mu005_rgb_led_data->led_low_current[LED_G] = 
+					pled_tuning_table[i].g_lowpower_current;
+		g_s2mu005_rgb_led_data->led_low_current[LED_R] = 
+					pled_tuning_table[i].r_lowpower_current;
+
+		devm_kfree(s2mu005->dev, pled_tuning_table);
+	}
+	
 	return 0;
-
 }
-#endif
-
+#endif // CONFIG_OF
 
 #ifdef SEC_LED_SPECIFIC
 /**
@@ -689,6 +755,30 @@ static struct attribute_group sec_led_attr_group = {
 };
 #endif //SEC_LED_SPECIFIC
  
+#ifdef CONFIG_SEC_SVCLED_POWERON_GLOW
+/**
+* s2mu005_is_jig_powered - get whether the phone is powered on by JIG or not.
+**/
+int s2mu005_is_jig_powered(void)
+{
+	char buf[24] = {0};
+	struct file *fp;
+	
+	fp = filp_open(JIG_STATUS_FILE_PATH, O_RDONLY, 0664);	
+	if(IS_ERR(fp))
+	{
+		printk(KERN_ERR "%s %s open failed\n", __func__, JIG_STATUS_FILE_PATH);
+		goto jig_exit;
+	}
+	
+	kernel_read(fp, fp->f_pos, buf, 1);
+	
+	filp_close(fp, current->files);
+	
+jig_exit:
+	return (buf[0] == '1');
+}
+#endif //CONFIG_SEC_SVCLED_POWERON_GLOW
 
 /**
 * s2mu005_rgb_led_probe - Enumerates service LED resources.
@@ -709,16 +799,41 @@ static int s2mu005_rgb_led_probe(struct platform_device *pdev)
 	g_s2mu005_rgb_led_data->i2c = s2mu005->i2c;
 	platform_set_drvdata(pdev, g_s2mu005_rgb_led_data); //TBD
 
-
-#if 0
+#ifdef CONFIG_OF
 	ret =  s2mu005_rgb_led_parse_dt(pdev, g_s2mu005_rgb_led_data);
 	if (ret) {
 		dev_err(&pdev->dev, "[%s] s2mu005_rgb_led parse dt failed\n", __func__);
 		goto exit;
 	}
-#endif
+#else
+	g_s2mu005_rgb_led_data->led_max_current[LED_R] = S2MU005_LED_R_MAX_CURRENT;
+	g_s2mu005_rgb_led_data->led_max_current[LED_G] = S2MU005_LED_G_MAX_CURRENT;
+	g_s2mu005_rgb_led_data->led_max_current[LED_B] = S2MU005_LED_B_MAX_CURRENT;
+	g_s2mu005_rgb_led_data->led_low_current[LED_R] = S2MU005_LED_R_LOW_CURRENT;
+	g_s2mu005_rgb_led_data->led_low_current[LED_G] = S2MU005_LED_G_LOW_CURRENT;
+	g_s2mu005_rgb_led_data->led_low_current[LED_B] = S2MU005_LED_B_LOW_CURRENT;
+#endif //CONFIG_OF
+
+	/* Update Currently the mode is normal mode */
+	g_s2mu005_rgb_led_data->led_lowpower_mode = 0;
+	
+	g_s2mu005_rgb_led_data->led_dynamic_current[LED_R] = 
+				g_s2mu005_rgb_led_data->led_max_current[LED_R];
+	g_s2mu005_rgb_led_data->led_dynamic_current[LED_G] = 
+				g_s2mu005_rgb_led_data->led_max_current[LED_G];;
+	g_s2mu005_rgb_led_data->led_dynamic_current[LED_B] = 
+				g_s2mu005_rgb_led_data->led_max_current[LED_B];
+	
 	INIT_WORK(&(g_s2mu005_rgb_led_data->blink_work),
 				 s2mu005_rgb_led_blink_work);
+
+#ifdef CONFIG_SEC_SVCLED_POWERON_GLOW
+	if(!s2mu005_is_jig_powered() && lcdtype == 0)
+	{
+		s2mu005_start_led_pattern(MISSED_NOTI);
+		return 0;
+	}
+#endif
 
 #ifdef SEC_LED_SPECIFIC
 	g_s2mu005_rgb_led_data->led_dev = sec_device_create(g_s2mu005_rgb_led_data, "led");
@@ -736,16 +851,6 @@ static int s2mu005_rgb_led_probe(struct platform_device *pdev)
 		goto exit;
 	}
 #endif
-
-	g_s2mu005_rgb_led_data->led_dynamic_current[LED_R] = S2MU005_LED_R_MAX_CURRENT;
-	g_s2mu005_rgb_led_data->led_dynamic_current[LED_G] = S2MU005_LED_G_MAX_CURRENT;
-	g_s2mu005_rgb_led_data->led_dynamic_current[LED_B] = S2MU005_LED_B_MAX_CURRENT;
-	g_s2mu005_rgb_led_data->led_max_current[LED_R] = S2MU005_LED_R_MAX_CURRENT;
-	g_s2mu005_rgb_led_data->led_max_current[LED_G] = S2MU005_LED_G_MAX_CURRENT;
-	g_s2mu005_rgb_led_data->led_max_current[LED_B] = S2MU005_LED_B_MAX_CURRENT;
-	g_s2mu005_rgb_led_data->led_low_current[LED_R] = S2MU005_LED_R_LOW_CURRENT;
-	g_s2mu005_rgb_led_data->led_low_current[LED_G] = S2MU005_LED_G_LOW_CURRENT;
-	g_s2mu005_rgb_led_data->led_low_current[LED_B] = S2MU005_LED_B_LOW_CURRENT;
 
 	return 0;
 exit:

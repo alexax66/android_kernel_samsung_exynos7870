@@ -12,17 +12,12 @@
  * GNU General Public License for more details.
  */
 
-/**
- * File            : trustedui.c
- * Created         : 26-02-2010
- */
-
 #include <linux/spinlock.h>
 #include <linux/module.h>
-#include <linux/t-base-tui.h>
+#include "t-base-tui.h"
 
 static int trustedui_mode = TRUSTEDUI_MODE_OFF;
-static int trustedui_blank_counter;
+static int trustedui_blank_counter = 0;
 
 static DEFINE_SPINLOCK(trustedui_lock);
 
@@ -125,6 +120,5 @@ int trustedui_clear_mask(int mask)
 }
 EXPORT_SYMBOL(trustedui_clear_mask);
 
-MODULE_AUTHOR("Trustonic Limited");
 MODULE_LICENSE("GPL v2");
 MODULE_DESCRIPTION("<t-base TUI");

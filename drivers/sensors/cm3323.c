@@ -156,14 +156,14 @@ static void cm3323_vdd_onoff(struct cm3323_p *data, bool onoff)
 			devm_regulator_put(data->vdd_pmic);
 			data->vdd_pmic = NULL;
 			return;
-		} 
+		}
 	}
 
 	if(onoff)
 	{
 		if(data->vdd_pmic)
 			ret = regulator_enable(data->vdd_pmic);
-		
+
 		if (ret)
 			SENSOR_ERR("Failed to enable vdd.\n");
 		msleep(20);
@@ -267,7 +267,7 @@ static ssize_t light_enable_store(struct device *dev,
 		data->power_state |= LIGHT_ENABLED;
 		if(!data->vdd_always_on)
 			cm3323_vdd_onoff(data, true);
-		
+
 		cm3323_light_enable(data);
 	} else if (!enable && (data->power_state & LIGHT_ENABLED)) {
 		cm3323_light_disable(data);
@@ -442,7 +442,7 @@ static int cm3323_parse_dt(struct device *dev, struct cm3323_p *data)
 	}
 	else
 		data->vdd_always_on = (val > 0)? true: false;
-	
+
 	return 0;
 }
 #else
@@ -476,9 +476,9 @@ static int cm3323_probe(struct i2c_client *client,
 
 	data->i2c_client = client;
 	i2c_set_clientdata(client, data);
-	
+
 	cm3323_vdd_onoff(data, true);
-	
+
 	/* Check if the device is there or not. */
 	ret = cm3323_setup_reg(data);
 	if (ret < 0) {
@@ -497,7 +497,7 @@ static int cm3323_probe(struct i2c_client *client,
 	INIT_DELAYED_WORK(&data->work, cm3323_work_func_light);
 
 	/* set sysfs for light sensor */
-	sensors_register(data->light_dev, data, sensor_attrs, MODULE_NAME);
+	sensors_register(&data->light_dev, data, sensor_attrs, MODULE_NAME);
 	pr_info("[SENSOR]: %s - Probe done!\n", __func__);
 
 	if(!data->vdd_always_on)

@@ -36,6 +36,8 @@
 #include <linux/apm-exynos.h>
 #endif
 
+#include "i2c-exynos5.h"
+
 #if defined(CONFIG_CPU_IDLE) || \
 	defined(CONFIG_EXYNOS_APM)
 static LIST_HEAD(drvdata_list);
@@ -223,64 +225,6 @@ static LIST_HEAD(drvdata_list);
 
 #define HSI2C_BATCHER_INIT_CMD	0xFFFFFFFF
 
-struct exynos5_i2c {
-	struct list_head	node;
-	struct i2c_adapter	adap;
-	unsigned int		need_hw_init;
-	unsigned int		suspended:1;
-
-	struct i2c_msg		*msg;
-	struct completion	msg_complete;
-	unsigned int		msg_ptr;
-	unsigned int		msg_len;
-
-	unsigned int		irq;
-
-	void __iomem		*regs;
-	void __iomem		*regs_mailbox;
-	struct clk		*clk;
-	struct clk		*rate_clk;
-	struct device		*dev;
-	int			state;
-
-	/*
-	 * Since the TRANS_DONE bit is cleared on read, and we may read it
-	 * either during an IRQ or after a transaction, keep track of its
-	 * state here.
-	 */
-	int			trans_done;
-
-	/* Controller operating frequency */
-	unsigned int		fs_clock;
-	unsigned int		hs_clock;
-
-	/*
-	 * HSI2C Controller can operate in
-	 * 1. High speed upto 3.4Mbps
-	 * 2. Fast speed upto 1Mbps
-	 */
-	int			speed_mode;
-	int			operation_mode;
-	int			bus_id;
-	int			scl_clk_stretch;
-	int			stop_after_trans;
-	int			use_old_timing_values;
-	unsigned int		transfer_delay;
-	unsigned int		sda_trigger_timing;
-#ifdef CONFIG_EXYNOS_APM
-	int			use_apm_mode;
-#endif
-	/* HSI2C Batcher can automatically handle HSI2C operation */
-	int			support_hsi2c_batcher;
-
-	unsigned int		cmd_buffer;
-	unsigned int		cmd_index;
-	unsigned int		cmd_pointer;
-	unsigned int		desc_pointer;
-	unsigned int		batcher_read_addr;
-	int			need_cs_enb;
-	int			idle_ip_index;
-};
 
 static const struct of_device_id exynos5_i2c_match[] = {
 	{ .compatible = "samsung,exynos5-hsi2c" },
@@ -612,6 +556,8 @@ static int exynos5_i2c_set_timing(struct exynos5_i2c *i2c, int mode)
 
 	if (mode == HSI2C_HIGH_SPD)
 		t_scl_h = ((clk_cycle + 10) / 3) - 5;
+	else if (i2c->scl_extended_low)
+		t_scl_h = clk_cycle / 3;
 	else
 		t_scl_h = clk_cycle / 2;
 
@@ -1470,7 +1416,16 @@ static int exynos5_i2c_xfer(struct i2c_adapter *adap,
 	exynos_update_ip_idle_status(i2c->idle_ip_index, 0);
 	clk_prepare_enable(i2c->clk);
 #endif
-	if (i2c->need_hw_init)
+	/* If master is in arbitration lost state before transfer */
+	/* master should be reset */
+	if (i2c->reset_before_trans) {
+		if (unlikely((readl(i2c->regs + HSI2C_TRANS_STATUS)
+			& HSI2C_MAST_ST_MASK) == 0xC)) {
+			i2c->need_hw_init = 1;
+		}
+	}
+
+	if ((i2c->need_hw_init) && !(i2c->support_hsi2c_batcher))
 		exynos5_i2c_reset(i2c);
 
 	if (!(i2c->support_hsi2c_batcher)) {
@@ -1636,9 +1591,19 @@ static int exynos5_i2c_probe(struct platform_device *pdev)
 	} else
 		i2c->need_cs_enb = 0;
 
+	if (of_get_property(np, "samsung,reset-before-trans", NULL))
+		i2c->reset_before_trans = 1;
+	else
+		i2c->reset_before_trans = 0;
+
 	ret = of_property_read_u32(np, "samsung.tsda-su-fs", &i2c->sda_trigger_timing);
 	if (ret)
 		dev_warn(&pdev->dev, "SDA trigger timing not needed.\n");
+
+	if (of_get_property(np, "samsung,scl-extended-low-period", NULL))
+		i2c->scl_extended_low = 1;
+	else
+		i2c->scl_extended_low = 0;
 
 	i2c->idle_ip_index = exynos_get_idle_ip_index(dev_name(&pdev->dev));
 
@@ -1813,6 +1778,10 @@ static int exynos5_i2c_probe(struct platform_device *pdev)
 #endif
 	return 0;
 
+	clk_disable(i2c->clk);
+
+	return 0;
+
  err_clk:
 	clk_disable_unprepare(i2c->clk);
 	exynos_update_ip_idle_status(i2c->idle_ip_index, 1);
@@ -1824,6 +1793,8 @@ static int exynos5_i2c_remove(struct platform_device *pdev)
 	struct exynos5_i2c *i2c = platform_get_drvdata(pdev);
 
 	i2c_del_adapter(&i2c->adap);
+
+	clk_unprepare(i2c->clk);
 
 	return 0;
 }
@@ -1838,6 +1809,8 @@ static int exynos5_i2c_suspend_noirq(struct device *dev)
 	i2c->suspended = 1;
 	i2c_unlock_adapter(&i2c->adap);
 
+	clk_unprepare(i2c->clk);
+
 	return 0;
 }
 
@@ -1847,6 +1820,7 @@ static int exynos5_i2c_resume_noirq(struct device *dev)
 	struct exynos5_i2c *i2c = platform_get_drvdata(pdev);
 
 	i2c_lock_adapter(&i2c->adap);
+
 	/* I2C for batcher doesn't need reset */
 	if(!(i2c->support_hsi2c_batcher)) {
 		exynos_update_ip_idle_status(i2c->idle_ip_index, 0);
@@ -1912,6 +1886,7 @@ static struct platform_driver exynos5_i2c_driver = {
 		.name	= "exynos5-hsi2c",
 		.pm	= &exynos5_i2c_pm,
 		.of_match_table = exynos5_i2c_match,
+		.suppress_bind_attrs = true,
 	},
 };
 

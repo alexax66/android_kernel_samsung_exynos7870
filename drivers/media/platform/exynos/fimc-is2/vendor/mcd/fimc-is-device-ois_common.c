@@ -475,7 +475,7 @@ static int fimc_is_ois_remove(struct i2c_client *client)
 
 static const struct i2c_device_id ois_id[] = {
 	{FIMC_IS_OIS_DEV_NAME, 0},
-	{}
+	{},
 };
 MODULE_DEVICE_TABLE(i2c, ois_id);
 

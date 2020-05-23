@@ -88,6 +88,7 @@ struct lpass_info {
 	int			kfc_qos;
 	int			mif_qos;
 	int			int_qos;
+	int			idle_ip_index;
 };
 
 extern void __iomem *lpass_get_regs(void);

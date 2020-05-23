@@ -1,90 +1,135 @@
-/* linux/drivers/video/exynos/decon_display/decon_board.c
- *
- * Copyright (c) 2015 Samsung Electronics
+/*
+ * Copyright (c) Samsung Electronics Co., Ltd.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
  * published by the Free Software Foundation.
-*/
+ */
 
 #include <linux/delay.h>
 #include <linux/kernel.h>
 #include <linux/list.h>
 #include <linux/of.h>
 #include <linux/of_gpio.h>
+#include <linux/of_platform.h>
 #include <linux/slab.h>
+#include <linux/ctype.h>
 #include <linux/regulator/consumer.h>
 #include "../../../../pinctrl/core.h"
 
 #include "decon_board.h"
 
 /*
-*
+ *
 0. There is a pre-defined property of the name of "decon_board".
 decon_board has a phandle value that uniquely identifies the other node
 containing subnodes to control gpio, regulator, delay and pinctrl.
 If you want make new list, write control sequence list in dts, and call run_list function with subnode name.
 
 1. type
-There are 4 pre-defined types
+There are 5 pre-defined types
 - GPIO has 2 kinds of subtype: HIGH, LOW
 - REGULATOR has 2 kinds of subtype: ENABLE, DISABLE
 - DELAY has 3 kinds of subtype: MDELAY, MSLEEP, USLEEP
-- PINCTRL has no pre-defined subtype, it needs pinctrl name as string in subtype position.
+- PINCTRL has no pre-defined subtype
+- TIMER has 3 kinds of subtype: START, CHECK, CLEAR
 
-2. subtype and property
-- GPIO(HIGH, LOW) search gpios-property for gpio position. 1 at a time.
-- REGULATOR(ENABLE, DISABLE) search regulator-property for regulator name. 1 at a time.
-- DELAY(MDELAY, MSLEEP) search delay-property for delay duration. 1 at a time.
-- DELAY(USLEEP) search delay-property for delay duration. 2 at a time.
+2. subinfo
+- GPIO(HIGH, LOW) needs gpio name information. 1 at a time.
+- REGULATOR(ENABLE, DISABLE) needs regulator name information. 1 at a time.
+- DELAY(MDELAY, MSLEEP) needs delay information for duration. 1 at a time.
+- DELAY(USLEEP) needs delay information. 2 at a time.
+- PINCTRL needs pinctrl name information. 1 at a time.
+- TIMER(START, DELAY, CLEAR) needs name which is used for identification keyword. 1 at a time.
+- TIMER(START) also needs delay information. 1 at a time.
 
-3. property type
-- type, subtype and desc property type is string
-- gpio-property type is phandle
-- regulator-property type is string
-- delay-property type is u32
+3. etc
+- do not use timer for delay < 20ms
+- do not use usleep for delay >= 20ms
+- do not use msleep for delay < 20ms
 
-4. check rule
-- number of type = number of subtype
-- number of each type = number of each property.
-But If subtype is USLEEP, it needs 2 parameter. So we check 1 USLEEP = 2 * u32 delay-property
 - desc-property is for debugging message description. It's not essential.
 
-5. example:
+4. example:
 decon_board = <&node>;
 node: node {
-	subnode {
-		type = "regulator,enable", "gpio,high", "delay,usleep", "pinctrl,turnon_tes", "delay,msleep";
-		desc = "ldo1 enable", "gpio high", "Wait 10ms", "te pin configuration", "30ms";
-		gpios = <&gpf1 5 0x1>;
-		delay = <10000 11000>, <30>;
-		regulator = "ldo1";
+	compatible = "simple-bus"; <- add this when you need pinctrol to create platform_device with name 'node'
+
+	pinctrl-names = "pin_off", "pin_on", "backlight_pin_only"; <- pinctrl position is here not in each subnode
+	pinctrl-0 = <&backlight_pin_off &lcd_pin_off>;
+	pinctrl-1 = <&backlight_pin_on &lcd_pin_on>;
+	pinctrl-2 = <&backlight_pin_on>;
+
+	gpio_lcd_en = <&gpf1 5 0x1>; <- gpio position is here not in each subnode
+
+	subnode_1 {
+		type =
+		"regulator,enable",	"ldo1",
+		"gpio,high",	"gpio_lcd_en",
+		"delay,usleep",	"10000 11000",
+		"pinctrl",	"pin_on",
+		"delay,msleep",	"30";
+	};
+	subnode_2 {
+		type =
+		"timer,start",	"loading 300";
+		desc = "keep timestamp when subnode_2 is called and we use 'loading' as identifier
+	};
+	subnode_3 {
+		type =
+		"timer,check",	"loading";
+		desc = "if duration (start ~ check) < 300ms, wait. else if duration is enough, pass through. and then clear timestamp"
+	};
+	subnode_4 {
+		type =
+		"pinctrl",	"backlight_pin_only";
 	};
 };
 
-run_list(dev, "subnode");
+run_list(dev, "subnode_1");
+run_list(dev, "subnode_2"); at this time [80000.000000] <- keep timestamp under the name of 'loading'
+run_list(dev, "subnode_3"); at this time [80000.290000] <- check duration subnode_2 ~ subnode_3 (0.290000 - 0.000000)
+and we wait 10ms because duration between subnode_2 and subnode_3 is only 290ms not 300ms. and we clear timestap.
+run_list(dev, "subnode_4"); pre-configured lcd_pin pinctrl at subnode_1 will be erased because one device has one pinctrl series at a time.
 
 */
 
-#ifdef CONFIG_LIST_DEBUG	/* this is not defconfig */
-#define list_dbg(format, arg...)	printk(format, ##arg)
-#else
-#define list_dbg(format, arg...)
-#endif
-
-#define STREQ(a, b) (*(a) == *(b) && strcmp((a), (b)) == 0)
-#define STRNEQ(a, b) (strncmp((a), (b), (strlen(a))) == 0)
+/* #define CONFIG_BOARD_DEBUG */
 
 #define DECON_BOARD_DTS_NAME	"decon_board"
 
-struct list_info {
+#if defined(CONFIG_BOARD_DEBUG)
+#define bd_dbg(fmt, ...)		pr_debug(pr_fmt("%s: %3d: %s: " fmt), DECON_BOARD_DTS_NAME, __LINE__, __func__, ##__VA_ARGS__)
+#else
+#define bd_dbg(fmt, ...)
+#endif
+#define bd_info(fmt, ...)		pr_info(pr_fmt("%s: %3d: %s: " fmt), DECON_BOARD_DTS_NAME, __LINE__, __func__, ##__VA_ARGS__)
+#define bd_warn(fmt, ...)		pr_warn(pr_fmt("%s: %3d: %s: " fmt), DECON_BOARD_DTS_NAME, __LINE__, __func__, ##__VA_ARGS__)
+
+#define STREQ(a, b)			(*(a) == *(b) && strcmp((a), (b)) == 0)
+#define STRNEQ(a, b)			(strncmp((a), (b), (strlen(a))) == 0)
+
+#define MSEC_TO_USEC(ms)		(ms * USEC_PER_MSEC)
+#define USEC_TO_MSEC(us)		(us / USEC_PER_MSEC)
+#define SMALL_MSECS			(20)
+
+struct dt_node_info {
 	char				*name;
 	struct list_head		node;
 };
 
+struct timer_info {
+	const char			*name;
+	u64				start;
+	u64				end;
+	u64				now;
+	unsigned int			delay;
+};
+
 struct action_info {
-	char				*type;
-	char				*subtype;
+	const char			*type;
+	const char			*subinfo;
+
 	const char			*desc;
 
 	unsigned int			idx;
@@ -93,6 +138,7 @@ struct action_info {
 	struct regulator_bulk_data	*supply;
 	struct pinctrl			*pins;
 	struct pinctrl_state		*state;
+	struct timer_info		*timer;
 	struct list_head		node;
 };
 
@@ -106,365 +152,643 @@ enum {
 	ACTION_DELAY_MSLEEP,
 	ACTION_DELAY_USLEEP,	/* usleep_range */
 	ACTION_PINCTRL,
+	ACTION_TIMER_START,
+	ACTION_TIMER_DELAY,
+	ACTION_TIMER_CLEAR,
 	ACTION_MAX
 };
 
-const char *action_list[ACTION_MAX][2] = {
-	[ACTION_GPIO_HIGH] = {"gpio", "high"},
-	{"gpio", "low"},
-	{"regulator", "enable"},
-	{"regulator", "disable"},
-	{"delay", "mdelay"},
-	{"delay", "msleep"},
-	{"delay", "usleep"},
-	{"pinctrl", ""}
+const char *action_list[ACTION_MAX] = {
+	[ACTION_GPIO_HIGH] = "gpio,high",
+	"gpio,low",
+	"regulator,enable",
+	"regulator,disable",
+	"delay,mdelay",
+	"delay,msleep",
+	"delay,usleep",
+	"pinctrl",
+	"timer,start",
+	"timer,delay",
+	"timer,clear"
 };
 
-static struct list_info	*lists[10];
+static struct dt_node_info	*dt_nodes[10];
 
-static int print_action(struct action_info *info)
+static int print_action(struct action_info *action)
 {
-	if (!IS_ERR_OR_NULL(info->desc))
-		list_dbg("[%2d] %s\n", info->idx, info->desc);
+	if (!IS_ERR_OR_NULL(action->desc))
+		bd_dbg("[%2d] %s\n", action->idx, action->desc);
 
-	switch (info->idx) {
+	switch (action->idx) {
 	case ACTION_GPIO_HIGH:
-		list_dbg("[%2d] gpio(%d) high\n", info->idx, info->gpio);
+		bd_dbg("[%2d] gpio(%d) high\n", action->idx, action->gpio);
 		break;
 	case ACTION_GPIO_LOW:
-		list_dbg("[%2d] gpio(%d) low\n", info->idx, info->gpio);
+		bd_dbg("[%2d] gpio(%d) low\n", action->idx, action->gpio);
 		break;
 	case ACTION_REGULATOR_ENABLE:
-		list_dbg("[%2d] regulator(%s) enable\n", info->idx, info->supply->supply);
+		bd_dbg("[%2d] regulator(%s) enable\n", action->idx, action->supply->supply);
 		break;
 	case ACTION_REGULATOR_DISABLE:
-		list_dbg("[%2d] regulator(%s) disable\n", info->idx, info->supply->supply);
+		bd_dbg("[%2d] regulator(%s) disable\n", action->idx, action->supply->supply);
 		break;
 	case ACTION_DELAY_MDELAY:
-		list_dbg("[%2d] mdelay(%d)\n", info->idx, info->delay[0]);
+		bd_dbg("[%2d] mdelay(%d)\n", action->idx, action->delay[0]);
 		break;
 	case ACTION_DELAY_MSLEEP:
-		list_dbg("[%2d] msleep(%d)\n", info->idx, info->delay[0]);
+		bd_dbg("[%2d] msleep(%d)\n", action->idx, action->delay[0]);
 		break;
 	case ACTION_DELAY_USLEEP:
-		list_dbg("[%2d] usleep(%d %d)\n", info->idx, info->delay[0], info->delay[1]);
+		bd_dbg("[%2d] usleep(%d %d)\n", action->idx, action->delay[0], action->delay[1]);
 		break;
 	case ACTION_PINCTRL:
-		list_dbg("[%2d] pinctrl(%s)\n", info->idx, info->state->name);
+		bd_dbg("[%2d] pinctrl(%s)\n", action->idx, action->state->name);
+		break;
+	case ACTION_TIMER_START:
+		bd_dbg("[%2d] timer,start(%s %d)\n", action->idx, action->timer->name, action->timer->delay);
+		break;
+	case ACTION_TIMER_DELAY:
+		bd_dbg("[%2d] timer,delay(%s %d)\n", action->idx, action->timer->name, action->timer->delay);
+		break;
+	case ACTION_TIMER_CLEAR:
+		bd_dbg("[%2d] timer,clear(%s %d)\n", action->idx, action->timer->name, action->timer->delay);
 		break;
 	default:
-		list_dbg("%s: unknown idx(%d)\n", __func__, info->idx);
+		bd_info("[%2d] unknown idx\n", action->idx);
 		break;
 	}
 
 	return 0;
 }
 
-static void dump_list(struct list_head *list)
+static int secprintf(char *buf, size_t size, s64 nsec)
 {
-	struct action_info *info;
+	struct timeval tv = ns_to_timeval(nsec);
 
-	list_for_each_entry(info, list, node) {
-		print_action(info);
-	}
+	return scnprintf(buf, size, "%lu.%06lu", (unsigned long)tv.tv_sec, tv.tv_usec);
 }
 
-static int decide_action(const char *type, const char *subtype)
+static void print_timer(struct timer_info *timer)
 {
-	int i;
-	int action = ACTION_DUMMY;
+	s64 elapse, remain;
+	char buf[70] = {0, };
+	int len = 0;
+
+	elapse = timer->now - timer->start;
+	remain = abs(timer->end - timer->now);
+
+	len += secprintf(buf + len, sizeof(buf) - len, timer->start);
+	len += scnprintf(buf + len, sizeof(buf) - len, " - ");
+	len += secprintf(buf + len, sizeof(buf) - len, timer->now);
+	len += scnprintf(buf + len, sizeof(buf) - len, " = ");
+	len += secprintf(buf + len, sizeof(buf) - len, elapse);
+	len += scnprintf(buf + len, sizeof(buf) - len, ", remain: %s", timer->end < timer->now ? "-" : "");
+	len += secprintf(buf + len, sizeof(buf) - len, remain);
+
+	bd_info("%s: delay: %d, %s\n", timer->name, timer->delay, buf);
+}
+
+static void dump_list(struct list_head *lh)
+{
+	struct action_info *action;
+	unsigned int gpio = 0, regulator = 0, delay = 0, pinctrl = 0, timer = 0;
+
+	list_for_each_entry(action, lh, node) {
+		print_action(action);
+	}
+
+	list_for_each_entry(action, lh, node) {
+		switch (action->idx) {
+		case ACTION_GPIO_HIGH:
+		case ACTION_GPIO_LOW:
+			gpio++;
+			break;
+		case ACTION_REGULATOR_ENABLE:
+		case ACTION_REGULATOR_DISABLE:
+			regulator++;
+			break;
+		case ACTION_DELAY_MDELAY:
+		case ACTION_DELAY_MSLEEP:
+		case ACTION_DELAY_USLEEP:
+			delay++;
+			break;
+		case ACTION_PINCTRL:
+			pinctrl++;
+			break;
+		case ACTION_TIMER_START:
+		case ACTION_TIMER_DELAY:
+		case ACTION_TIMER_CLEAR:
+			timer++;
+			break;
+		}
+	}
+
+	bd_info("gpio: %d, regulator: %d, delay: %d, pinctrl: %d, timer: %d\n", gpio, regulator, delay, pinctrl, timer);
+}
+
+static struct timer_info *find_timer(const char *name)
+{
+	struct dt_node_info *dt_node = NULL;
+	struct list_head *lh = NULL;
+	struct timer_info *timer = NULL;
+	struct action_info *action;
+	int idx = 0;
+
+	bd_dbg("%s\n", name);
+	while (!IS_ERR_OR_NULL(dt_nodes[idx])) {
+		dt_node = dt_nodes[idx];
+		lh = &dt_node->node;
+		bd_dbg("%dth dt_node name is %s\n", idx, dt_node->name);
+		list_for_each_entry(action, lh, node) {
+			if (STRNEQ("timer", action->type)) {
+				if (action->timer && action->timer->name && STREQ(action->timer->name, name)) {
+					bd_dbg("%s is found in %s\n", action->timer->name, dt_node->name);
+					return action->timer;
+				}
+			}
+		}
+		idx++;
+		BUG_ON(idx == ARRAY_SIZE(dt_nodes));
+	};
+
+	bd_info("%s is not exist, so create it\n", name);
+	timer = kzalloc(sizeof(struct timer_info), GFP_KERNEL);
+	timer->name = kstrdup(name, GFP_KERNEL);
+
+	return timer;
+}
+
+static int decide_type(struct action_info *action)
+{
+	int i, ret = 0;
+	int idx = ACTION_DUMMY;
+	const char *type = action->type;
 
 	if (type == NULL || *type == '\0')
-		return 0;
-	if (subtype == NULL || *subtype == '\0')
-		return 0;
+		return ret;
 
 	if (STRNEQ("pinctrl", type)) {
-		action = ACTION_PINCTRL;
+		idx = ACTION_PINCTRL;
 		goto exit;
 	}
 
 	for (i = ACTION_GPIO_HIGH; i < ACTION_MAX; i++) {
-		if (STRNEQ(action_list[i][0], type) && STRNEQ(action_list[i][1], subtype)) {
-			action = i;
+		if (STRNEQ(action_list[i], type)) {
+			idx = i;
 			break;
 		}
 	}
 
 exit:
-	if (action == ACTION_DUMMY)
-		pr_err("no valid action for %s %s\n", type, subtype);
+	if (idx == ACTION_DUMMY || idx == ACTION_MAX) {
+		bd_warn("there is no valid idx for %s\n", type);
+		idx = ACTION_DUMMY;
+		ret = -EINVAL;
+	}
 
-	return action;
+	action->idx = idx;
+
+	return ret;
 }
 
-static int check_dt(struct device_node *np)
+static int decide_subinfo(struct device_node *np, struct action_info *action)
 {
-	struct property *prop;
-	const char *s;
-	int type, desc;
-	int gpio = 0, delay = 0, regulator = 0, pinctrl = 0, delay_property = 0;
+	int ret = 0;
+	const char *subinfo = NULL;
+	struct platform_device *pdev = NULL;
+	char *timer_name = NULL;
+	unsigned int delay = 0;
 
-	of_property_for_each_string(np, "type", prop, s) {
-		if (STRNEQ("gpio", s))
-			gpio++;
-		else if (STRNEQ("regulator", s))
-			regulator++;
-		else if (STRNEQ("delay", s))
-			delay++;
-		else if (STRNEQ("pinctrl", s))
-			pinctrl++;
-		else {
-			pr_err("there is no valid type for %s\n", s);
-#ifdef CONFIG_LIST_DEBUG
-			BUG();
-#endif
+	if (!action) {
+		bd_warn("invalid action\n");
+		ret = -EINVAL;
+		goto exit;
+	}
+
+	subinfo = action->subinfo;
+
+	if (!subinfo || !strlen(subinfo)) {
+		bd_warn("invalid subinfo\n");
+		ret = -EINVAL;
+		goto exit;
+	}
+
+	switch (action->idx) {
+	case ACTION_GPIO_HIGH:
+	case ACTION_GPIO_LOW:
+		action->gpio = of_get_named_gpio(np->parent, subinfo, 0);
+		if (!gpio_is_valid(action->gpio)) {
+			bd_warn("of_get_named_gpio fail %d %s\n", action->gpio, subinfo);
+			ret = -EINVAL;
 		}
+		break;
+	case ACTION_REGULATOR_ENABLE:
+	case ACTION_REGULATOR_DISABLE:
+		action->supply = kzalloc(sizeof(struct regulator_bulk_data), GFP_KERNEL);
+		action->supply->supply = subinfo;
+		ret = regulator_bulk_get(NULL, 1, action->supply);
+		if (ret < 0)
+			bd_warn("regulator_bulk_get fail %d %s\n", ret, subinfo);
+		break;
+	case ACTION_DELAY_MDELAY:
+	case ACTION_DELAY_MSLEEP:
+		if (!isdigit(subinfo[0])) {
+			bd_warn("delay need digit parameter %s\n", subinfo);
+			ret = -EINVAL;
+			goto exit;
+		}
+
+		ret = kstrtouint(subinfo, 0, &action->delay[0]);
+		if (ret < 0)
+			bd_warn("kstrtouint for delay fail %d %s\n", ret, subinfo);
+		break;
+	case ACTION_DELAY_USLEEP:
+		if (!isdigit(subinfo[0])) {
+			bd_warn("delay need digit parameter %s\n", subinfo);
+			ret = -EINVAL;
+			goto exit;
+		}
+
+		ret = sscanf(subinfo, "%8d %8d", &action->delay[0], &action->delay[1]);
+		if (ret < 0) {
+			bd_warn("sscanf for delay fail %d %s\n", ret, subinfo);
+			ret = -EINVAL;
+		} else if (ret < 2) {
+			bd_warn("usleep need two parameters\n");
+			action->delay[1] = action->delay[0] + (action->delay[0] >> 2);
+		} else if (ret > 2) {
+			bd_warn("usleep need only two parameters\n");
+			ret = -EINVAL;
+		}
+
+		if (!action->delay[0] || !action->delay[1]) {
+			bd_warn("usleep parameter (%d %d) invalid\n", action->delay[0], action->delay[1]);
+			ret = -EINVAL;
+		} else if (action->delay[0] > action->delay[1]) {
+			bd_warn("usleep parameter (%d %d) invalid\n", action->delay[0], action->delay[1]);
+			ret = -EINVAL;
+		} else if (action->delay[0] >= MSEC_TO_USEC(SMALL_MSECS)) {
+			bd_warn("use msleep instead of usleep for (%d)us\n", action->delay[0]);
+			ret = -EINVAL;
+		}
+		break;
+	case ACTION_PINCTRL:
+		pdev = of_find_device_by_node(np->parent);
+		if (!pdev) {
+			bd_warn("of_find_device_by_node fail\n");
+			ret = -EINVAL;
+			goto exit;
+		} else
+			bd_info("of_find_device_by_node %s for pinctrl %s\n", dev_name(&pdev->dev), subinfo);
+
+		action->pins = devm_pinctrl_get(&pdev->dev);
+		if (IS_ERR(action->pins)) {
+			bd_warn("devm_pinctrl_get fail\n");
+			ret = -EINVAL;
+		}
+		action->state = pinctrl_lookup_state(action->pins, subinfo);
+		if (IS_ERR(action->state)) {
+			bd_warn("pinctrl_lookup_state fail %s\n", subinfo);
+			ret = -EINVAL;
+		}
+		break;
+	case ACTION_TIMER_START:
+		timer_name = kzalloc(strlen(subinfo) + 1, GFP_KERNEL);
+		ret = sscanf(subinfo, "%s %8d\n", timer_name, &delay);
+		if (ret != 2) {
+			bd_warn("timer start parameter invalid %d %s\n", ret, subinfo);
+			ret = -EINVAL;
+		} else {
+			action->timer = find_timer(timer_name);
+			action->timer->delay = delay;
+		}
+
+		if (action->timer->delay < SMALL_MSECS) {
+			bd_warn("use usleep instead of timer for (%d)ms\n", action->timer->delay);
+			ret = -EINVAL;
+		}
+		kfree(timer_name);
+		break;
+	case ACTION_TIMER_DELAY:
+	case ACTION_TIMER_CLEAR:
+		action->timer = find_timer(subinfo);
+		break;
+	default:
+		bd_warn("idx: %d, type: %s is invalid\n", action->idx, action->type);
+		ret = -EINVAL;
+		break;
 	}
 
-	of_property_for_each_string(np, "type", prop, s) {
-		if (STRNEQ("delay,usleep", s))
-			delay++;
-	}
+	bd_info("idx: %d, type: %s, subinfo: %s\n", action->idx, action->type, action->subinfo);
+exit:
 
-	type = of_property_count_strings(np, "type");
-
-	if (of_find_property(np, "desc", NULL)) {
-		desc = of_property_count_strings(np, "desc");
-		WARN(type != desc, "type(%d) and desc(%d) is not match\n", type, desc);
-#ifdef CONFIG_LIST_DEBUG
-		BUG_ON(type != desc);
-#endif
-	}
-
-	if (of_find_property(np, "gpios", NULL)) {
-		WARN(gpio != of_gpio_count(np), "gpio(%d %d) is not match\n", gpio, of_gpio_count(np));
-#ifdef CONFIG_LIST_DEBUG
-		BUG_ON(gpio != of_gpio_count(np));
-#endif
-	}
-
-	if (of_find_property(np, "regulator", NULL)) {
-		WARN(regulator != of_property_count_strings(np, "regulator"),
-			"regulator(%d %d) is not match\n", regulator, of_property_count_strings(np, "regulator"));
-#ifdef CONFIG_LIST_DEBUG
-		BUG_ON(regulator != of_property_count_strings(np, "regulator"));
-#endif
-	}
-
-	if (of_find_property(np, "delay", &delay_property)) {
-		delay_property /= sizeof(u32);
-		WARN(delay != delay_property, "delay(%d %d) is not match\n", delay, delay_property);
-#ifdef CONFIG_LIST_DEBUG
-		BUG_ON(delay != delay_property);
-#endif
-	}
-
-	pr_info("%s: gpio: %d, regulator: %d, delay: %d, pinctrl: %d\n", __func__, gpio, regulator, delay, pinctrl);
-
-	return 0;
+	return ret;
 }
 
-static int make_list(struct device *dev, struct list_head *list, const char *name)
+static int make_list(struct device *dev, struct list_head *lh, const char *name)
 {
 	struct device_node *np = NULL;
-	struct action_info *info;
-	int i, count;
-	int gpio = 0, delay = 0, regulator = 0, ret = 0;
-	const char *type;
+	struct action_info *action;
+	int i, count, ret = 0;
+	const char *type = NULL;
+	const char *subinfo = NULL;
 
 	np = of_parse_phandle(dev->of_node, DECON_BOARD_DTS_NAME, 0);
-	if (!np) {
-		pr_err("%s: %s node does not exist, so create dummy\n", __func__, DECON_BOARD_DTS_NAME);
-	}
+	if (!np)
+		bd_warn("%s node does not exist, so create dummy\n", DECON_BOARD_DTS_NAME);
 
 	np = of_find_node_by_name(np, name);
 	if (!np) {
-		pr_err("%s: %s node does not exist, so create dummy\n", __func__, name);
-		info = kzalloc(sizeof(struct action_info), GFP_KERNEL);
-		list_add_tail(&info->node, list);
+		bd_warn("%s node does not exist, so create dummy\n", name);
+		action = kzalloc(sizeof(struct action_info), GFP_KERNEL);
+		list_add_tail(&action->node, lh);
 		return -EINVAL;
 	}
 
-	check_dt(np);
-
 	count = of_property_count_strings(np, "type");
 
-	for (i = 0; i < count; i++) {
-		of_property_read_string_index(np, "type", i, &type);
+	if (count < 0 || !count || count % 2) {
+		bd_info("%s node type count %d invalid\n", name, count);
+		action = kzalloc(sizeof(struct action_info), GFP_KERNEL);
+		list_add_tail(&action->node, lh);
+		return -EINVAL;
+	}
 
-		if (!lcdtype && !STRNEQ("delay", type)) {
-			pr_info("%s: lcdtype is zero, so skip to add %s: %2d: %s\n", __func__, name, count, type);
+	count /= 2;
+
+	for (i = 0; i < count; i++) {
+		of_property_read_string_index(np, "type", i * 2, &type);
+		of_property_read_string_index(np, "type", i * 2 + 1, &subinfo);
+
+		if (!lcdtype && !STRNEQ("delay", type) && !STRNEQ("timer", type)) {
+			bd_info("lcdtype is zero, so skip to add %s: %2d: %s\n", name, count, type);
 			continue;
 		}
 
-		info = kzalloc(sizeof(struct action_info), GFP_KERNEL);
-		info->subtype = kstrdup(type, GFP_KERNEL);
-		info->type = strsep(&info->subtype, ",");
+		action = kzalloc(sizeof(struct action_info), GFP_KERNEL);
+		action->type = type;
+		action->subinfo = subinfo;
+
+		ret = decide_type(action);
+		if (ret < 0)
+			break;
+		ret = decide_subinfo(np, action);
+		if (ret < 0)
+			break;
 
 		if (of_property_count_strings(np, "desc") == count)
-			of_property_read_string_index(np, "desc", i, &info->desc);
+			of_property_read_string_index(np, "desc", i, &action->desc);
 
-		info->idx = decide_action(info->type, info->subtype);
-
-		list_add_tail(&info->node, list);
+		list_add_tail(&action->node, lh);
 	}
 
-	list_for_each_entry(info, list, node) {
-		switch (info->idx) {
-		case ACTION_GPIO_HIGH:
-		case ACTION_GPIO_LOW:
-			info->gpio = of_get_gpio(np, gpio);
-			if (!gpio_is_valid(info->gpio)) {
-				pr_err("%s: %d: of_get_gpio fail\n", __func__, __LINE__);
-				ret = -EINVAL;
-			}
-			gpio++;
-			break;
-		case ACTION_REGULATOR_ENABLE:
-		case ACTION_REGULATOR_DISABLE:
-			info->supply = kzalloc(sizeof(struct regulator_bulk_data), GFP_KERNEL);
-			of_property_read_string_index(np, "regulator", regulator, &info->supply->supply);
-			ret = regulator_bulk_get(NULL, 1, info->supply);
-			if (ret)
-				pr_err("%s: %d: regulator_bulk_get fail %s %d\n", __func__, __LINE__, info->supply->supply, ret);
-			regulator++;
-			break;
-		case ACTION_DELAY_MDELAY:
-		case ACTION_DELAY_MSLEEP:
-			ret = of_property_read_u32_index(np, "delay", delay, &info->delay[0]);
-			if (ret)
-				pr_err("%s: %d: of_property_read_u32_index\n", __func__, __LINE__);
-			delay++;
-			break;
-		case ACTION_DELAY_USLEEP:
-			ret = of_property_read_u32_index(np, "delay", delay, &info->delay[0]);
-			delay++;
-			ret += of_property_read_u32_index(np, "delay", delay, &info->delay[1]);
-			delay++;
-			if (ret)
-				pr_err("%s: %d: of_property_read_u32_index\n", __func__, __LINE__);
-			break;
-		case ACTION_PINCTRL:
-			info->pins = devm_pinctrl_get(dev);
-			if (IS_ERR(info->pins)) {
-				pr_err("%s: devm_pinctrl_get fail\n", __func__);
-				ret = -EINVAL;
-			}
-			info->state = pinctrl_lookup_state(info->pins, info->subtype);
-			if (IS_ERR(info->pins)) {
-				pr_err("%s: pinctrl_lookup_state fail %s\n", __func__, info->subtype);
-				ret = -EINVAL;
-			}
-			break;
-		default:
-			pr_err("%d %s %s error\n", info->idx, info->type, info->subtype);
-			ret = -EINVAL;
-			break;
-		}
-	}
+	if (ret < 0)
+		kfree(action);
 
-#ifdef CONFIG_LIST_DEBUG
-	if (ret)
+	if (ret < 0)
 		BUG();
-#endif
 
-	return 0;
+	return ret;
 }
 
-static int do_list(struct list_head *list)
+static int do_list(struct list_head *lh)
 {
-	struct action_info *info;
+	struct action_info *action;
 	int ret = 0;
+	u64 us_delta;
 
-	list_for_each_entry(info, list, node) {
-		switch (info->idx) {
+	list_for_each_entry(action, lh, node) {
+		switch (action->idx) {
 		case ACTION_GPIO_HIGH:
-			ret = gpio_request_one(info->gpio, GPIOF_OUT_INIT_HIGH, NULL);
-			if (ret)
-				pr_err("gpio_request_one fail\n");
-			gpio_free(info->gpio);
+			ret = gpio_request_one(action->gpio, GPIOF_OUT_INIT_HIGH, NULL);
+			if (ret < 0)
+				bd_warn("gpio_request_one fail %d, %d, %s\n", ret, action->gpio, action->subinfo);
+			gpio_free(action->gpio);
 			break;
 		case ACTION_GPIO_LOW:
-			ret = gpio_request_one(info->gpio, GPIOF_OUT_INIT_LOW, NULL);
-			if (ret)
-				pr_err("gpio_request_one fail\n");
-			gpio_free(info->gpio);
+			ret = gpio_request_one(action->gpio, GPIOF_OUT_INIT_LOW, NULL);
+			if (ret < 0)
+				bd_warn("gpio_request_one fail %d, %d, %s\n", ret, action->gpio, action->subinfo);
+			gpio_free(action->gpio);
 			break;
 		case ACTION_REGULATOR_ENABLE:
-			ret = regulator_enable(info->supply->consumer);
-			if (ret)
-				pr_err("regulator_enable fail, %s\n", info->supply->supply);
+			ret = regulator_enable(action->supply->consumer);
+			if (ret < 0)
+				bd_warn("regulator_enable fail %d, %s\n", ret, action->supply->supply);
 			break;
 		case ACTION_REGULATOR_DISABLE:
-			ret = regulator_disable(info->supply->consumer);
-			if (ret)
-				pr_err("regulator_disable fail, %s\n", info->supply->supply);
+			ret = regulator_disable(action->supply->consumer);
+			if (ret < 0)
+				bd_warn("regulator_disable fail %d, %s\n", ret, action->supply->supply);
 			break;
 		case ACTION_DELAY_MDELAY:
-			mdelay(info->delay[0]);
+			mdelay(action->delay[0]);
 			break;
 		case ACTION_DELAY_MSLEEP:
-			msleep(info->delay[0]);
+			msleep(action->delay[0]);
 			break;
 		case ACTION_DELAY_USLEEP:
-			usleep_range(info->delay[0], info->delay[1]);
+			usleep_range(action->delay[0], action->delay[1]);
 			break;
 		case ACTION_PINCTRL:
-			pinctrl_select_state(info->pins, info->state);
+			pinctrl_select_state(action->pins, action->state);
+			break;
+		case ACTION_TIMER_START:
+			action->timer->start = local_clock();
+			action->timer->end = action->timer->start + (action->timer->delay * NSEC_PER_MSEC);
+			break;
+		case ACTION_TIMER_DELAY:
+			action->timer->now = local_clock();
+			print_timer(action->timer);
+
+			if (!action->timer->end)
+				msleep(action->timer->delay);
+			else if (action->timer->end > action->timer->now) {
+				us_delta = ktime_us_delta(ns_to_ktime(action->timer->end), ns_to_ktime(action->timer->now));
+
+				if (!us_delta || us_delta > UINT_MAX)
+					break;
+
+				if (us_delta < MSEC_TO_USEC(SMALL_MSECS))
+					usleep_range(us_delta, us_delta + (us_delta >> 1));
+				else
+					msleep(USEC_TO_MSEC(us_delta));
+			}
+		case ACTION_TIMER_CLEAR:
+			action->timer->end = 0;
 			break;
 		case ACTION_DUMMY:
 			break;
 		default:
-			pr_err("%s: unknown idx(%d)\n", __func__, info->idx);
+			bd_warn("unknown idx(%d)\n", action->idx);
 			ret = -EINVAL;
 			break;
 		}
 	}
 
-#ifdef CONFIG_LIST_DEBUG
-	if (ret)
+	if (ret < 0)
 		BUG();
-#endif
 
-	return 0;
+	return ret;
 }
 
 static inline struct list_head *find_list(const char *name)
 {
-	struct list_info *info = NULL;
+	struct dt_node_info *dt_node = NULL;
 	int idx = 0;
 
-	list_dbg("%s: %s\n", __func__, name);
-	while (!IS_ERR_OR_NULL(lists[idx])) {
-		info = lists[idx];
-		list_dbg("%s: %dth list name is %s\n", __func__, idx, info->name);
-		if (STREQ(info->name, name))
-			return &info->node;
+	bd_dbg("%s\n", name);
+	while (!IS_ERR_OR_NULL(dt_nodes[idx])) {
+		dt_node = dt_nodes[idx];
+		bd_dbg("%dth list name is %s\n", idx, dt_node->name);
+		if (STREQ(dt_node->name, name))
+			return &dt_node->node;
 		idx++;
-		BUG_ON(idx == ARRAY_SIZE(lists));
+		BUG_ON(idx == ARRAY_SIZE(dt_nodes));
 	};
 
-	pr_info("%s is not exist, so create it\n", name);
-	info = kzalloc(sizeof(struct list_info), GFP_KERNEL);
-	info->name = kstrdup(name, GFP_KERNEL);
-	INIT_LIST_HEAD(&info->node);
+	bd_info("%s is not exist, so create it\n", name);
+	dt_node = kzalloc(sizeof(struct dt_node_info), GFP_KERNEL);
+	dt_node->name = kstrdup(name, GFP_KERNEL);
+	INIT_LIST_HEAD(&dt_node->node);
 
-	lists[idx] = info;
+	dt_nodes[idx] = dt_node;
 
-	return &info->node;
+	return &dt_node->node;
 }
 
 void run_list(struct device *dev, const char *name)
 {
-	struct list_head *list = find_list(name);
+	struct list_head *lh = find_list(name);
 
-	if (unlikely(list_empty(list))) {
-		pr_info("%s is empty, so make list\n", name);
-		make_list(dev, list, name);
-		dump_list(list);
+	if (unlikely(list_empty(lh))) {
+		bd_info("%s is empty, so make list\n", name);
+		make_list(dev, lh, name);
+		dump_list(lh);
 	}
 
-	do_list(list);
+	do_list(lh);
+}
+
+int of_gpio_get_active(const char *gpioname)
+{
+	int ret = 0, gpio = 0, gpio_level, active_level;
+	struct device_node *np = NULL;
+	enum of_gpio_flags flags = {0, };
+
+	np = of_find_node_with_property(NULL, gpioname);
+	if (!np) {
+		bd_info("of_find_node_with_property fail for %s\n", gpioname);
+		ret = -EINVAL;
+		goto exit;
+	}
+
+	bd_dbg("%s property find in node %s\n", gpioname, np->name);
+
+	gpio = of_get_named_gpio_flags(np, gpioname, 0, &flags);
+	if (!gpio_is_valid(gpio)) {
+		bd_warn("of_get_named_gpio fail %d %s\n", gpio, gpioname);
+		ret = -EINVAL;
+		goto exit;
+	}
+	of_node_put(np);
+
+	active_level = !(flags & OF_GPIO_ACTIVE_LOW);
+	gpio_level = gpio_get_value(gpio);
+	ret = (gpio_level == active_level) ? 1 : 0;
+exit:
+	return ret;
+}
+
+int of_gpio_get_value(const char *gpioname)
+{
+	int ret = 0, gpio = 0, gpio_level, active_level;
+	struct device_node *np = NULL;
+	enum of_gpio_flags flags = {0, };
+
+	np = of_find_node_with_property(NULL, gpioname);
+	if (!np) {
+		bd_info("of_find_node_with_property fail for %s\n", gpioname);
+		ret = -EINVAL;
+		goto exit;
+	}
+
+	bd_dbg("%s property find in node %s\n", gpioname, np->name);
+
+	gpio = of_get_named_gpio_flags(np, gpioname, 0, &flags);
+	if (!gpio_is_valid(gpio)) {
+		bd_warn("of_get_named_gpio fail %d %s\n", gpio, gpioname);
+		of_node_put(np);
+		ret = -EINVAL;
+		goto exit;
+	}
+	of_node_put(np);
+
+	active_level = !(flags & OF_GPIO_ACTIVE_LOW);
+	gpio_level = gpio_get_value(gpio);
+	ret = gpio_level;
+
+exit:
+	return ret;
+}
+
+int of_gpio_set_value(const char *gpioname, int value)
+{
+	int ret = 0, gpio = 0;
+	struct device_node *np = NULL;
+	enum of_gpio_flags flags = {0, };
+
+	np = of_find_node_with_property(NULL, gpioname);
+	if (!np) {
+		bd_info("of_find_node_with_property fail for %s\n", gpioname);
+		ret = -EINVAL;
+		goto exit;
+	}
+
+	bd_dbg("%s property find in node %s\n", gpioname, np->name);
+
+	gpio = of_get_named_gpio_flags(np, gpioname, 0, &flags);
+	if (!gpio_is_valid(gpio)) {
+		bd_warn("of_get_named_gpio fail %d %s\n", gpio, gpioname);
+		of_node_put(np);
+		ret = -EINVAL;
+		goto exit;
+	}
+	of_node_put(np);
+
+	ret = gpio_request_one(gpio, value ? GPIOF_OUT_INIT_HIGH : GPIOF_OUT_INIT_LOW, NULL);
+	if (ret < 0)
+		bd_warn("gpio_request_one fail %d, %d, %s\n", ret, gpio, gpioname);
+	gpio_free(gpio);
+exit:
+	return ret;
+}
+
+int of_get_gpio_with_name(const char *gpioname)
+{
+	int ret = 0, gpio = 0;
+	struct device_node *np = NULL;
+	enum of_gpio_flags flags = {0, };
+
+	np = of_find_node_with_property(NULL, gpioname);
+	if (!np) {
+		bd_info("of_find_node_with_property fail for %s\n", gpioname);
+		ret = -EINVAL;
+		goto exit;
+	}
+
+	bd_dbg("%s property find in node %s\n", gpioname, np->name);
+
+	gpio = of_get_named_gpio_flags(np, gpioname, 0, &flags);
+	if (!gpio_is_valid(gpio)) {
+		bd_warn("of_get_named_gpio fail %d %s\n", gpio, gpioname);
+		ret = -EINVAL;
+		goto exit;
+	}
+	of_node_put(np);
+
+	ret = gpio;
+exit:
+	return ret;
 }
 

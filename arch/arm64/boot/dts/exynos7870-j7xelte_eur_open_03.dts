@@ -383,7 +383,6 @@
 					<&but_zones 115 291 488>, /* vol up */
 					<&but_zones 114 489 1000>; /* vol down */
 			mic-adc-range = <1350>;
-			mic-det-delay = <50>;			
 		};
 	};
 
@@ -433,7 +432,18 @@
 		pinctrl-0=<&bt_hostwake &bt_btwake &bt_en>;
 		status = "okay";
 	};
-
+	
+	pinctrl@13750000 {
+		sd1_cmd: sd1-cmd {
+			samsung,pins = "gpr2-1";
+			samsung,pin-function = <2>;
+			samsung,pin-pud = <0>;
+			samsung,pin-drv = <2>;
+			samsung,pin-con-pdn = <2>;
+			samsung,pin-pud-pdn = <3>;
+		};
+	};
+	
 	pinctrl@139F0000 {
 		acc_int: acc_int {
 			samsung,pins = "gpa2-3";

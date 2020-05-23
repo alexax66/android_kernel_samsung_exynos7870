@@ -159,11 +159,17 @@ static int sensor_module_5e3_power_setpin(struct platform_device *pdev,
 	} else {
 		SET_PIN(pdata, SENSOR_SCENARIO_NORMAL, GPIO_SCENARIO_ON, gpio_none, "VDD_CAM_SENSOR_A2P8", PIN_REGULATOR, 1, 1000);
 	}
-	SET_PIN(pdata, SENSOR_SCENARIO_NORMAL, GPIO_SCENARIO_ON, gpio_vtcam_1p2_en, "vtcam_1p2_en", PIN_OUTPUT, 1, 1000);
+	if (gpio_is_valid(gpio_vtcam_1p2_en)) {
+		SET_PIN(pdata, SENSOR_SCENARIO_NORMAL, GPIO_SCENARIO_ON, gpio_vtcam_1p2_en, "vtcam_1p2_en", PIN_OUTPUT, 1, 1000);
+	} else {
+		SET_PIN(pdata, SENSOR_SCENARIO_NORMAL, GPIO_SCENARIO_ON, gpio_none, "VDD_VTCAM_CORE_1P2", PIN_REGULATOR, 1, 1000);
+	}
 	if (gpio_is_valid(gpio_vtcam_1p8_en)) {
 		SET_PIN(pdata, SENSOR_SCENARIO_NORMAL, GPIO_SCENARIO_ON, gpio_vtcam_1p8_en, "vtcam_1p8_en", PIN_OUTPUT, 1, 0);
-	} else {
+	} else if (gpio_is_valid(gpio_camio_1p8_en)) {
 		SET_PIN(pdata, SENSOR_SCENARIO_NORMAL, GPIO_SCENARIO_ON, gpio_camio_1p8_en, "camio_1p8_en", PIN_OUTPUT, 1, 1000);
+	} else {
+		SET_PIN(pdata, SENSOR_SCENARIO_NORMAL, GPIO_SCENARIO_ON, gpio_none, "VDDIO_1.8V_CAM", PIN_REGULATOR, 1, 1000);
 	}
 #endif
 	SET_PIN(pdata, SENSOR_SCENARIO_NORMAL, GPIO_SCENARIO_ON, gpio_reset, "sen_rst high", PIN_OUTPUT, 1, 0);
@@ -175,10 +181,16 @@ static int sensor_module_5e3_power_setpin(struct platform_device *pdev,
 #ifdef CONFIG_SOC_EXYNOS7870
 	if (gpio_is_valid(gpio_vtcam_1p8_en)) {
 		SET_PIN(pdata, SENSOR_SCENARIO_NORMAL, GPIO_SCENARIO_OFF, gpio_vtcam_1p8_en, "vtcam_1p8_en", PIN_OUTPUT, 0, 1000);
-	} else {
+	} else if (gpio_is_valid(gpio_camio_1p8_en)) {
 		SET_PIN(pdata, SENSOR_SCENARIO_NORMAL, GPIO_SCENARIO_OFF, gpio_camio_1p8_en, "camio_1p8_en", PIN_OUTPUT, 0, 1000);
+	} else {
+		SET_PIN(pdata, SENSOR_SCENARIO_NORMAL, GPIO_SCENARIO_OFF, gpio_none, "VDDIO_1.8V_CAM", PIN_REGULATOR, 0, 1000);
 	}
-	SET_PIN(pdata, SENSOR_SCENARIO_NORMAL, GPIO_SCENARIO_OFF, gpio_vtcam_1p2_en, "vtcam_1p2_en", PIN_OUTPUT, 0, 1000);
+	if (gpio_is_valid(gpio_vtcam_1p2_en)) {
+		SET_PIN(pdata, SENSOR_SCENARIO_NORMAL, GPIO_SCENARIO_OFF, gpio_vtcam_1p2_en, "vtcam_1p2_en", PIN_OUTPUT, 0, 1000);
+	} else {
+		SET_PIN(pdata, SENSOR_SCENARIO_NORMAL, GPIO_SCENARIO_OFF, gpio_none, "VDD_VTCAM_CORE_1P2", PIN_REGULATOR, 0, 1000);
+	}
 	if (gpio_is_valid(gpio_sensor_a2p8_en)) {
 		SET_PIN(pdata, SENSOR_SCENARIO_NORMAL, GPIO_SCENARIO_OFF, gpio_sensor_a2p8_en, "sensor_a2p8_en", PIN_OUTPUT, 0, 0);
 	} else {
@@ -188,18 +200,23 @@ static int sensor_module_5e3_power_setpin(struct platform_device *pdev,
 
 #ifdef CONFIG_CAMERA_OTPROM_SUPPORT_FRONT
 	/* READ_ROM - POWER ON */
-	SET_PIN(pdata, SENSOR_SCENARIO_READ_ROM, GPIO_SCENARIO_ON, gpio_reset, "sen_rst low", PIN_OUTPUT, 0, 0);
 #ifdef CONFIG_SOC_EXYNOS7870
 	if (gpio_is_valid(gpio_sensor_a2p8_en)) {
 		SET_PIN(pdata, SENSOR_SCENARIO_READ_ROM, GPIO_SCENARIO_ON, gpio_sensor_a2p8_en, "sensor_a2p8_en", PIN_OUTPUT, 1, 1000);
 	} else {
 		SET_PIN(pdata, SENSOR_SCENARIO_READ_ROM, GPIO_SCENARIO_ON, gpio_none, "VDD_CAM_SENSOR_A2P8", PIN_REGULATOR, 1, 1000);
 	}
-	SET_PIN(pdata, SENSOR_SCENARIO_READ_ROM, GPIO_SCENARIO_ON, gpio_vtcam_1p2_en, "vtcam_1p2_en", PIN_OUTPUT, 1, 1000);
+	if (gpio_is_valid(gpio_vtcam_1p2_en)) {
+		SET_PIN(pdata, SENSOR_SCENARIO_READ_ROM, GPIO_SCENARIO_ON, gpio_vtcam_1p2_en, "vtcam_1p2_en", PIN_OUTPUT, 1, 1000);
+	} else {
+		SET_PIN(pdata, SENSOR_SCENARIO_READ_ROM, GPIO_SCENARIO_ON, gpio_none, "VDD_VTCAM_CORE_1P2", PIN_REGULATOR, 1, 1000);
+	}
 	if (gpio_is_valid(gpio_vtcam_1p8_en)) {
 		SET_PIN(pdata, SENSOR_SCENARIO_READ_ROM, GPIO_SCENARIO_ON, gpio_vtcam_1p8_en, "vtcam_1p8_en", PIN_OUTPUT, 1, 0);
-	} else {
+	} else if (gpio_is_valid(gpio_camio_1p8_en)) {
 		SET_PIN(pdata, SENSOR_SCENARIO_READ_ROM, GPIO_SCENARIO_ON, gpio_camio_1p8_en, "camio_1p8_en", PIN_OUTPUT, 1, 1000);
+	}  else {
+		SET_PIN(pdata, SENSOR_SCENARIO_READ_ROM, GPIO_SCENARIO_ON, gpio_none, "VDDIO_1.8V_CAM", PIN_REGULATOR, 1, 1000);
 	}
 #endif
 	SET_PIN(pdata, SENSOR_SCENARIO_READ_ROM, GPIO_SCENARIO_ON, gpio_reset, "sen_rst high", PIN_OUTPUT, 1, 0);
@@ -211,10 +228,16 @@ static int sensor_module_5e3_power_setpin(struct platform_device *pdev,
 #ifdef CONFIG_SOC_EXYNOS7870
 	if (gpio_is_valid(gpio_vtcam_1p8_en)) {
 		SET_PIN(pdata, SENSOR_SCENARIO_READ_ROM, GPIO_SCENARIO_OFF, gpio_vtcam_1p8_en, "vtcam_1p8_en", PIN_OUTPUT, 0, 1000);
-	} else {
+	} else if (gpio_is_valid(gpio_camio_1p8_en)) {
 		SET_PIN(pdata, SENSOR_SCENARIO_READ_ROM, GPIO_SCENARIO_OFF, gpio_camio_1p8_en, "camio_1p8_en", PIN_OUTPUT, 0, 1000);
+	} else {
+		SET_PIN(pdata, SENSOR_SCENARIO_READ_ROM, GPIO_SCENARIO_OFF, gpio_none, "VDDIO_1.8V_CAM", PIN_REGULATOR, 0, 1000);
 	}
-	SET_PIN(pdata, SENSOR_SCENARIO_READ_ROM, GPIO_SCENARIO_OFF, gpio_vtcam_1p2_en, "vtcam_1p2_en", PIN_OUTPUT, 0, 1000);
+	if (gpio_is_valid(gpio_vtcam_1p2_en)) {
+		SET_PIN(pdata, SENSOR_SCENARIO_READ_ROM, GPIO_SCENARIO_OFF, gpio_vtcam_1p2_en, "vtcam_1p2_en", PIN_OUTPUT, 0, 1000);
+	} else {
+		SET_PIN(pdata, SENSOR_SCENARIO_READ_ROM, GPIO_SCENARIO_OFF, gpio_none, "VDD_VTCAM_CORE_1P2", PIN_REGULATOR, 0, 0);
+	}
 	if (gpio_is_valid(gpio_sensor_a2p8_en)) {
 		SET_PIN(pdata, SENSOR_SCENARIO_READ_ROM, GPIO_SCENARIO_OFF, gpio_sensor_a2p8_en, "sensor_a2p8_en", PIN_OUTPUT, 0, 0);
 	} else {
@@ -223,9 +246,17 @@ static int sensor_module_5e3_power_setpin(struct platform_device *pdev,
 #endif
 #else
 	/* READ_ROM - POWER ON */
-	SET_PIN(pdata, SENSOR_SCENARIO_READ_ROM, GPIO_SCENARIO_ON, gpio_camio_1p8_en, "camio_1p8_en", PIN_OUTPUT, 1, 0);
+	if (gpio_is_valid(gpio_camio_1p8_en)) {
+		SET_PIN(pdata, SENSOR_SCENARIO_READ_ROM, GPIO_SCENARIO_ON, gpio_camio_1p8_en, "camio_1p8_en", PIN_OUTPUT, 1, 1000);
+	} else {
+		SET_PIN(pdata, SENSOR_SCENARIO_READ_ROM, GPIO_SCENARIO_ON, gpio_none, "VDDIO_1.8V_CAM", PIN_REGULATOR, 1, 1000);
+	}
 	/* READ_ROM - POWER OFF */
-	SET_PIN(pdata, SENSOR_SCENARIO_READ_ROM, GPIO_SCENARIO_OFF, gpio_camio_1p8_en, "camio_1p8_en", PIN_OUTPUT, 0, 0);
+	if (gpio_is_valid(gpio_camio_1p8_en)) {
+		SET_PIN(pdata, SENSOR_SCENARIO_READ_ROM, GPIO_SCENARIO_OFF, gpio_camio_1p8_en, "camio_1p8_en", PIN_OUTPUT, 0, 1000);
+	} else {
+		SET_PIN(pdata, SENSOR_SCENARIO_READ_ROM, GPIO_SCENARIO_OFF, gpio_none, "VDDIO_1.8V_CAM", PIN_REGULATOR, 0, 1000);
+	}
 #endif
 	dev_info(dev, "%s X v4\n", __func__);
 

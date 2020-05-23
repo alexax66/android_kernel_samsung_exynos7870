@@ -21,7 +21,7 @@
         model_info-platform = "android";
         model_info-subtype = "samsung";
         model_info-hw_rev = <1>;
-        model_info-hw_rev_end = <255>;
+        model_info-hw_rev_end = <1>;
 	compatible = "samsung, DEGAS2 WIFI EUR BMW 01", "samsung,exynos7870";
 
 	cnss_dcdc_en: cnss_dcdc_en {
@@ -87,7 +87,9 @@
 			interrupt-parent = <&gpa0>;
 			interrupts = <5 0 0>;
 			sx9306_wifi-i2c,nirq-gpio = <&gpa0 5 0>;
-			sx9306_wifi-i2c,normal-thd = <10>; /* normal touch threshold */
+			sx9306_wifi-i2c,ctrl0 = <0x34>;
+			sx9306_wifi-i2c,ctrl2 = <0x57>;
+			sx9306_wifi-i2c,normal-thd = <5>; /* normal touch threshold */
 			sx9306_wifi-i2c,ch-main = <2>; /* channel number */
 			sx9306_wifi-i2c,ch-sub1 = <0xff>;  /*oxff: Not be used sub channel */
 		};
@@ -343,7 +345,6 @@
 					regulator-name = "LCD_1P8";
 					regulator-min-microvolt = <1800000>;
 					regulator-max-microvolt = <1800000>;
-					regulator-always-on;
 					regulator-initial-mode = <3>;
 				};
 
@@ -407,7 +408,6 @@
 					<&but_zones 115 296 495>, /* vol up */
 					<&but_zones 114 496 1000>; /* vol down */
 			mic-adc-range = <1360>;
-			mic-det-delay = <50>;
 		};
 	};
 
@@ -495,6 +495,10 @@
 		compatible = "samsung,exynos-bcm4752";
 		gpios = <&gpc2 2 0x1 >; /* GPS_EN */
 		status = "okay";
+	};
+
+	dsim_0: dsim@14800000 {
+		decon_board = <&decon_board_old>;
 	};
 
 };

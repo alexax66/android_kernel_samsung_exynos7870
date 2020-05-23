@@ -243,6 +243,11 @@ int fimc_is_itf_process_off_wrap(struct fimc_is_device_ischain *device, u32 grou
 	return ret;
 }
 
+void fimc_is_itf_sudden_stop_wrap(struct fimc_is_device_ischain *device, u32 instance)
+{
+	return;
+}
+
 int fimc_is_itf_power_down_wrap(struct fimc_is_interface *interface, u32 instance)
 {
 	int ret = 0;

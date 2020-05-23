@@ -58,7 +58,6 @@
 #include "fimc-is-clk-gate.h"
 #include "fimc-is-dvfs.h"
 #include "fimc-is-device-preprocessor.h"
-#include "fimc-is-interface-fd.h"
 #include "fimc-is-vender-specific.h"
 #if defined(CONFIG_LEDS_S2MU005_FLASH) && defined(CONFIG_LEDS_SUPPORT_FRONT_FLASH)
 #include <linux/leds-s2mu005.h>
@@ -869,10 +868,12 @@ static int fimc_is_ischain_loadfirm(struct fimc_is_device_ischain *device,
 	fp = filp_open(vender->fw_path, O_RDONLY, 0);
 	if (IS_ERR_OR_NULL(fp)) {
 		fw_load_ret = fimc_is_vender_fw_filp_open(vender, &fp, FIMC_IS_BIN_FW);
-		if(fw_load_ret == FW_SKIP)
+		if (fw_load_ret == FW_SKIP) {
 			goto request_fw;
-		else if(fw_load_ret == FW_FAIL)
+		} else if (fw_load_ret == FW_FAIL) {
+			fw_requested = 0;
 			goto out;
+		}
 	}
 
 	fw_requested = 0;
@@ -1090,10 +1091,12 @@ static int fimc_is_ischain_loadsetf(struct fimc_is_device_ischain *device,
 	fp = filp_open(vender->setfile_path, O_RDONLY, 0);
 	if (IS_ERR_OR_NULL(fp)) {
 		fw_load_ret = fimc_is_vender_fw_filp_open(vender, &fp, FIMC_IS_BIN_SETFILE);
-		if(fw_load_ret == FW_SKIP)
+		if (fw_load_ret == FW_SKIP) {
 			goto request_fw;
-		else if(fw_load_ret == FW_FAIL)
+		} else if (fw_load_ret == FW_FAIL) {
+			fw_requested = 0;
 			goto out;
+		}
 	}
 
 	fw_requested = 0;
@@ -2282,6 +2285,10 @@ int fimc_is_ischain_runtime_suspend(struct device *dev)
 #endif
 #if !defined(ENABLE_IS_CORE)
 	fimc_is_hardware_runtime_suspend(&core->hardware);
+#endif
+#ifdef USE_CAMERA_HW_BIG_DATA
+	if (fimc_is_sec_need_update_to_file())
+		fimc_is_sec_copy_err_cnt_to_file();
 #endif
 	info("FIMC_IS runtime suspend out\n");
 	return 0;
@@ -3969,6 +3976,8 @@ int fimc_is_ischain_3aa_close(struct fimc_is_device_ischain *device,
 	/* for mediaserver dead */
 	if (test_bit(FIMC_IS_GROUP_START, &group->state)) {
 		mgwarn("sudden group close", device, group);
+		if (!test_bit(FIMC_IS_ISCHAIN_REPROCESSING, &device->state))
+			fimc_is_itf_sudden_stop_wrap(device, device->instance);
 		set_bit(FIMC_IS_GROUP_REQUEST_FSTOP, &group->state);
 	}
 
@@ -4242,6 +4251,8 @@ int fimc_is_ischain_isp_close(struct fimc_is_device_ischain *device,
 	/* for mediaserver dead */
 	if (test_bit(FIMC_IS_GROUP_START, &group->state)) {
 		mgwarn("sudden group close", device, group);
+		if (!test_bit(FIMC_IS_ISCHAIN_REPROCESSING, &device->state))
+			fimc_is_itf_sudden_stop_wrap(device, device->instance);
 		set_bit(FIMC_IS_GROUP_REQUEST_FSTOP, &group->state);
 
 		ret = fimc_is_ischain_3aa_stop(device, NULL);
@@ -4516,6 +4527,8 @@ int fimc_is_ischain_dis_close(struct fimc_is_device_ischain *device,
 	/* for mediaserver dead */
 	if (test_bit(FIMC_IS_GROUP_START, &group->state)) {
 		mgwarn("sudden group close", device, group);
+		if (!test_bit(FIMC_IS_ISCHAIN_REPROCESSING, &device->state))
+			fimc_is_itf_sudden_stop_wrap(device, device->instance);
 		set_bit(FIMC_IS_GROUP_REQUEST_FSTOP, &group->state);
 	}
 
@@ -4784,6 +4797,8 @@ int fimc_is_ischain_mcs_close(struct fimc_is_device_ischain *device,
 	/* for mediaserver dead */
 	if (test_bit(FIMC_IS_GROUP_START, &group->state)) {
 		mgwarn("sudden group close", device, group);
+		if (!test_bit(FIMC_IS_ISCHAIN_REPROCESSING, &device->state))
+			fimc_is_itf_sudden_stop_wrap(device, device->instance);
 		set_bit(FIMC_IS_GROUP_REQUEST_FSTOP, &group->state);
 	}
 
@@ -5046,6 +5061,8 @@ int fimc_is_ischain_vra_close(struct fimc_is_device_ischain *device,
 	/* for mediaserver dead */
 	if (test_bit(FIMC_IS_GROUP_START, &group->state)) {
 		mgwarn("sudden group close", device, group);
+		if (!test_bit(FIMC_IS_ISCHAIN_REPROCESSING, &device->state))
+			fimc_is_itf_sudden_stop_wrap(device, device->instance);
 		set_bit(FIMC_IS_GROUP_REQUEST_FSTOP, &group->state);
 	}
 
@@ -5729,6 +5746,9 @@ static int fimc_is_ischain_3aa_shot(struct fimc_is_device_ischain *device,
 	struct fimc_is_frame *frame;
 	struct camera2_node_group *node_group;
 	struct camera2_node ldr_node = {0, };
+#ifdef ENABLE_INIT_AWB
+	struct fimc_is_device_sensor *sensor;
+#endif
 
 #ifdef ENABLE_FAST_SHOT
 	uint32_t af_trigger_bk;
@@ -5748,6 +5768,9 @@ static int fimc_is_ischain_3aa_shot(struct fimc_is_device_ischain *device,
 
 	frame = NULL;
 	group = &device->group_3aa;
+#ifdef ENABLE_INIT_AWB
+	sensor = device->sensor;
+#endif
 
 	framemgr = GET_SUBDEV_FRAMEMGR(&group->leader);
 	if (!framemgr) {
@@ -5839,6 +5862,26 @@ static int fimc_is_ischain_3aa_shot(struct fimc_is_device_ischain *device,
 	/* fd information copy */
 	memcpy(&frame->shot->uctl.fdUd, &device->cur_peri_ctl.fdUd, sizeof(struct camera2_fd_uctl));
 
+#ifdef ENABLE_INIT_AWB
+	if (sensor) {
+		if ((frame->shot->ctl.aa.awbMode == AA_AWBMODE_WB_AUTO)
+			&& (frame->fcount <= sensor->init_wb_cnt)
+			&& (frame->shot->ctl.aa.sceneMode == AA_SCENE_MODE_FACE_LOCK)
+			&& memcmp(sensor->init_wb, sensor->chk_wb, sizeof(float) * WB_GAIN_COUNT)) {
+
+			/* for applying init AWB feature,
+			 * 1. awbMode is AA_AWB_MODE_WB_AUTO
+			 * 2. it is applied at only initial count frame num
+			 * 3. set only last_ae value exist
+			 */
+			memcpy(frame->shot->ctl.color.gains, sensor->init_wb, sizeof(float) * WB_GAIN_COUNT);
+			frame->shot->ctl.aa.awbMode = AA_AWBMODE_OFF;
+
+			minfo("F[%d]init AWB(applied cnt:%d)", sensor, frame->fcount, sensor->init_wb_cnt);
+		}
+	}
+#endif
+	
 	PROGRAM_COUNT(9);
 
 	parent = NULL;

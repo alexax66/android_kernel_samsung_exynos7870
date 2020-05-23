@@ -12,6 +12,7 @@
 
 #include <linux/atomic.h>
 #include <linux/compat.h>
+#include <linux/cred.h>
 #include <linux/device.h>
 #include <linux/fs.h>
 #include <linux/hid.h>
@@ -25,9 +26,12 @@
 #include <linux/uhid.h>
 #include <linux/wait.h>
 #include <linux/fb.h>
+#include <linux/uaccess.h>
 
 #define UHID_NAME	"uhid"
 #define UHID_BUFSIZE	32
+
+static DEFINE_MUTEX(uhid_open_mutex);
 
 struct uhid_device {
 	struct mutex devlock;
@@ -52,11 +56,27 @@ struct uhid_device {
 	u32 report_id;
 	u32 report_type;
 	struct uhid_event report_buf;
+	struct work_struct worker;
 };
 
 static struct miscdevice uhid_misc;
 
 bool lcd_is_on = true;
+
+static void uhid_device_add_worker(struct work_struct *work)
+{
+	struct uhid_device *uhid = container_of(work, struct uhid_device, worker);
+	int ret;
+
+	ret = hid_add_device(uhid->hid);
+	if (ret) {
+		hid_err(uhid->hid, "Cannot register HID device: error %d\n", ret);
+
+		hid_destroy_device(uhid->hid);
+		uhid->hid = NULL;
+		uhid->running = false;
+	}
+}
 
 static void uhid_queue(struct uhid_device *uhid, struct uhid_event *ev)
 {
@@ -129,15 +149,26 @@ static void uhid_hid_stop(struct hid_device *hid)
 static int uhid_hid_open(struct hid_device *hid)
 {
 	struct uhid_device *uhid = hid->driver_data;
+	int retval = 0;
 
-	return uhid_queue_event(uhid, UHID_OPEN);
+	mutex_lock(&uhid_open_mutex);
+	if (!hid->open++) {
+		retval = uhid_queue_event(uhid, UHID_OPEN);
+		if (retval)
+			hid->open--;
+	}
+	mutex_unlock(&uhid_open_mutex);
+	return retval;
 }
 
 static void uhid_hid_close(struct hid_device *hid)
 {
 	struct uhid_device *uhid = hid->driver_data;
 
-	uhid_queue_event(uhid, UHID_CLOSE);
+	mutex_lock(&uhid_open_mutex);
+	if (!--hid->open)
+		uhid_queue_event(uhid, UHID_CLOSE);
+	mutex_unlock(&uhid_open_mutex);
 }
 
 static int uhid_hid_parse(struct hid_device *hid)
@@ -501,18 +532,14 @@ static int uhid_dev_create2(struct uhid_device *uhid,
 	uhid->hid = hid;
 	uhid->running = true;
 
-	ret = hid_add_device(hid);
-	if (ret) {
-		hid_err(hid, "Cannot register HID device\n");
-		goto err_hid;
-	}
+	/* Adding of a HID device is done through a worker, to allow HID drivers
+	 * which use feature requests during .probe to work, without they would
+	 * be blocked on devlock, which is held by uhid_char_write.
+	 */
+	schedule_work(&uhid->worker);
 
 	return 0;
 
-err_hid:
-	hid_destroy_device(hid);
-	uhid->hid = NULL;
-	uhid->running = false;
 err_free:
 	kfree(uhid->rd_data);
 	uhid->rd_data = NULL;
@@ -552,6 +579,8 @@ static int uhid_dev_destroy(struct uhid_device *uhid)
 
 	uhid->running = false;
 	wake_up_interruptible(&uhid->report_wait);
+
+	cancel_work_sync(&uhid->worker);
 
 	hid_destroy_device(uhid->hid);
 	kfree(uhid->rd_data);
@@ -615,6 +644,7 @@ static int uhid_char_open(struct inode *inode, struct file *file)
 	init_waitqueue_head(&uhid->waitq);
 	init_waitqueue_head(&uhid->report_wait);
 	uhid->running = false;
+	INIT_WORK(&uhid->worker, uhid_device_add_worker);
 
 	file->private_data = uhid;
 	nonseekable_open(inode, file);
@@ -709,6 +739,17 @@ static ssize_t uhid_char_write(struct file *file, const char __user *buffer,
 
 	switch (uhid->input_buf.type) {
 	case UHID_CREATE:
+		/*
+		 * 'struct uhid_create_req' contains a __user pointer which is
+		 * copied from, so it's unsafe to allow this with elevated
+		 * privileges (e.g. from a setuid binary) or via kernel_write().
+		 */
+		if (file->f_cred != current_cred() || uaccess_kernel()) {
+			pr_err_once("UHID_CREATE from different security context by process %d (%s), this is not allowed.\n",
+				    task_tgid_vnr(current), current->comm);
+			ret = -EACCES;
+			goto unlock;
+		}
 		ret = uhid_dev_create(uhid, &uhid->input_buf);
 		break;
 	case UHID_CREATE2:

@@ -703,6 +703,19 @@ static int vidioc_g_fmt_vid_cap_mplane(struct file *file, void *priv,
 		   rectangle. */
 		s5p_mfc_dec_calc_dpb_size(ctx);
 
+		/* If total memory requirement is too big for this device,
+		 * then it returns error.
+		 * 5: number of extra DPBs
+		 * 3: number of DPBs for Android framework
+		 * 600MB: being used to return an error,
+		 * when 8K resolution video clip is being tried to be decoded
+		 */
+		if ((ctx->raw_buf.total_plane_size * (ctx->dpb_count + 5 + 3)) > (600 * 1024 * 1024)) {
+			mfc_info_ctx("Total memory size is too big. width(%d), height(%d), dpb(%d)\n",
+						ctx->img_width, ctx->img_height, ctx->dpb_count);
+			return -EIO;
+		}
+
 		pix_mp->width = ctx->img_width;
 		pix_mp->height = ctx->img_height;
 		pix_mp->num_planes = ctx->dst_fmt->mem_planes;
@@ -1686,6 +1699,9 @@ static int vidioc_s_ctrl(struct file *file, void *priv,
 	case V4L2_CID_MPEG_MFC_SET_BUF_PROCESS_TYPE:
 		ctx->buf_process_type = ctrl->value;
 		break;
+	case V4L2_CID_MPEG_VIDEO_BLACK_BAR_DETECT:
+		dec->detect_black_bar = ctrl->value;
+		break;
 	default:
 		list_for_each_entry(ctx_ctrl, &ctx->ctrls, list) {
 			if (!(ctx_ctrl->type & MFC_CTRL_TYPE_SET))
@@ -1751,26 +1767,41 @@ static int vidioc_g_crop(struct file *file, void *priv,
 		return -EINVAL;
 	}
 
-	if (ctx->src_fmt->fourcc == V4L2_PIX_FMT_H264 ||
-			ctx->src_fmt->fourcc == V4L2_PIX_FMT_HEVC) {
-		cr->c.left = dec->cr_left;
-		cr->c.top = dec->cr_top;
-		cr->c.width = ctx->img_width - dec->cr_left - dec->cr_right;
-		cr->c.height = ctx->img_height - dec->cr_top - dec->cr_bot;
-		mfc_debug(2, "Cropping info [h264]: l=%d t=%d "	\
-			"w=%d h=%d (r=%d b=%d fw=%d fh=%d)\n",
-			dec->cr_left, dec->cr_top, cr->c.width, cr->c.height,
-			dec->cr_right, dec->cr_bot,
-			ctx->buf_width, ctx->buf_height);
+	if (ctx->state == MFCINST_RUNNING && dec->detect_black_bar
+			&& dec->black_bar_updated) {
+		cr->c.left = dec->black_bar.left;
+		cr->c.top = dec->black_bar.top;
+		cr->c.width = dec->black_bar.width;
+		cr->c.height = dec->black_bar.height;
+		mfc_debug(2, "black bar info: l=%d t=%d w=%d h=%d\n",
+				dec->black_bar.left,
+				dec->black_bar.top,
+				dec->black_bar.width,
+				dec->black_bar.height);
 	} else {
-		cr->c.left = 0;
-		cr->c.top = 0;
-		cr->c.width = ctx->img_width;
-		cr->c.height = ctx->img_height;
-		mfc_debug(2, "Cropping info: w=%d h=%d fw=%d "
-			"fh=%d\n", cr->c.width,	cr->c.height, ctx->buf_width,
-							ctx->buf_height);
+		if (ctx->src_fmt->fourcc == V4L2_PIX_FMT_H264 ||
+				ctx->src_fmt->fourcc == V4L2_PIX_FMT_HEVC) {
+			cr->c.left = dec->cr_left;
+			cr->c.top = dec->cr_top;
+			cr->c.width = ctx->img_width - dec->cr_left - dec->cr_right;
+			cr->c.height = ctx->img_height - dec->cr_top - dec->cr_bot;
+			mfc_debug(2, "Cropping info [h264]: l=%d t=%d "	\
+					"w=%d h=%d (r=%d b=%d fw=%d fh=%d)\n",
+					dec->cr_left, dec->cr_top,
+					cr->c.width, cr->c.height,
+					dec->cr_right, dec->cr_bot,
+					ctx->buf_width, ctx->buf_height);
+		} else {
+			cr->c.left = 0;
+			cr->c.top = 0;
+			cr->c.width = ctx->img_width;
+			cr->c.height = ctx->img_height;
+			mfc_debug(2, "Cropping info: w=%d h=%d fw=%d fh=%d\n",
+					cr->c.width, cr->c.height,
+					ctx->buf_width,	ctx->buf_height);
+		}
 	}
+
 	mfc_debug_leave();
 	return 0;
 }
@@ -2286,7 +2317,7 @@ static void s5p_mfc_stop_streaming(struct vb2_queue *q)
 			INIT_LIST_HEAD(&dec->ref_queue);
 			dec->ref_queue_cnt = 0;
 			dec->dynamic_used = 0;
-			dec->err_sync_flag = 0;
+			dec->err_reuse_flag = 0;
 		}
 
 		s5p_mfc_cleanup_queue(&ctx->dst_queue);
@@ -2335,26 +2366,53 @@ static void s5p_mfc_stop_streaming(struct vb2_queue *q)
 			mfc_debug(2, "Decoding can be started now\n");
 		}
 	} else if (q->type == V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE) {
-		if (ctx->is_drm && ctx->stream_protect_flag) {
+		while (!list_empty(&ctx->src_queue)) {
 			struct s5p_mfc_buf *src_buf;
-			int i;
+			int index, csd, condition = 0;
 
-			mfc_debug(2, "stream_protect_flag(%#lx) will be released\n",
-					ctx->stream_protect_flag);
-			list_for_each_entry(src_buf, &ctx->src_queue, list) {
-				i = src_buf->vb.v4l2_buf.index;
-				if (test_bit(i, &ctx->stream_protect_flag)) {
-					if (s5p_mfc_stream_buf_prot(ctx, src_buf, false))
-						mfc_err_ctx("failed to CFW_UNPROT\n");
-					else
-						clear_bit(i, &ctx->stream_protect_flag);
+			src_buf = list_entry(ctx->src_queue.next, struct s5p_mfc_buf, list);
+			index = src_buf->vb.v4l2_buf.index;
+			csd = src_buf->vb.v4l2_buf.reserved2 & FLAG_CSD ? 1 : 0;
+
+			if (csd) {
+				spin_unlock_irqrestore(&dev->irqlock, flags);
+				s5p_mfc_clean_ctx_int_flags(ctx);
+				if (need_to_special_parsing(ctx)) {
+					s5p_mfc_change_state(ctx, MFCINST_SPECIAL_PARSING);
+					condition = S5P_FIMV_R2H_CMD_SEQ_DONE_RET;
+					mfc_info_ctx("try to special parsing! (before NAL_START)\n");
+				} else if (need_to_special_parsing_nal(ctx)) {
+					s5p_mfc_change_state(ctx, MFCINST_SPECIAL_PARSING_NAL);
+					condition = S5P_FIMV_R2H_CMD_FRAME_DONE_RET;
+					mfc_info_ctx("try to special parsing! (after NAL_START)\n");
+				} else {
+					mfc_info_ctx("can't parsing CSD!, state = %d\n", ctx->state);
 				}
-				mfc_debug(2, "[%d] dec src buf un-prot_flag: %#lx\n",
-						i, ctx->stream_protect_flag);
+				if (condition) {
+					spin_lock_irq(&dev->condlock);
+					set_bit(ctx->num, &dev->ctx_work_bits);
+					spin_unlock_irq(&dev->condlock);
+					s5p_mfc_try_run(dev);
+					if (s5p_mfc_wait_for_done_ctx(ctx, condition)) {
+						mfc_err_ctx("special parsing time out\n");
+						s5p_mfc_cleanup_timeout_and_try_run(ctx);
+					}
+				}
+				spin_lock_irqsave(&dev->irqlock, flags);
 			}
+			if (ctx->is_drm && test_bit(index, &ctx->stream_protect_flag)) {
+				if (s5p_mfc_stream_buf_prot(ctx, src_buf, false))
+					mfc_err_ctx("failed to CFW_UNPROT\n");
+				else
+					clear_bit(index, &ctx->stream_protect_flag);
+				mfc_debug(2, "[%d] dec src buf un-prot flag: %#lx\n",
+						index, ctx->stream_protect_flag);
+			}
+			vb2_set_plane_payload(&src_buf->vb, 0, 0);
+			vb2_buffer_done(&src_buf->vb, VB2_BUF_STATE_ERROR);
+			list_del(&src_buf->list);
 		}
 
-		s5p_mfc_cleanup_queue(&ctx->src_queue);
 		INIT_LIST_HEAD(&ctx->src_queue);
 		ctx->src_queue_cnt = 0;
 
@@ -2615,7 +2673,7 @@ int s5p_mfc_init_dec_ctx(struct s5p_mfc_ctx *ctx)
 	dec->immediate_display = 0;
 	dec->is_dts_mode = 0;
 	dec->tiled_buf_cnt = 0;
-	dec->err_sync_flag = 0;
+	dec->err_reuse_flag = 0;
 
 	dec->is_dynamic_dpb = 0;
 	dec->dynamic_used = 0;

@@ -43,14 +43,6 @@
 #define TDMB_RING_BUFFER_MAPPING_SIZE	\
 		(((TDMB_RING_BUFFER_SIZE - 1) / PAGE_SIZE + 1) * PAGE_SIZE)
 
-/* #define TDMB_FCI_PTCHECK */
-#ifdef TDMB_FCI_PTCHECK
-struct ioctl_info {
-	__u32 size;
-	__u32 buff[128];
-};
-#endif
-
 /* commands */
 #define IOCTL_MAGIC	't'
 #define IOCTL_MAXNR	32
@@ -67,14 +59,6 @@ struct ioctl_info {
 #define IOCTL_TDMB_ASSIGN_CH_TEST	_IO(IOCTL_MAGIC, 9)
 #define IOCTL_TDMB_SET_AUTOSTART	_IO(IOCTL_MAGIC, 10)
 
-#ifdef TDMB_FCI_PTCHECK
-#define IOCTL_TDMB_TS_START		_IO(IOCTL_MAGIC, 18)
-#define IOCTL_TDMB_TS_STOP		_IO(IOCTL_MAGIC, 19)
-#define IOCTL_TDMB_BYTE_WRITE	_IOW(IOCTL_MAGIC, 28, struct ioctl_info)
-#define IOCTL_TDMB_BYTE_READ	_IOWR(IOCTL_MAGIC, 29, struct ioctl_info)
-#define IOCTL_TDMB_WORD_WRITE	_IOW(IOCTL_MAGIC, 30, struct ioctl_info)
-#define IOCTL_TDMB_WORD_READ	_IOWR(IOCTL_MAGIC, 31, struct ioctl_info)
-#endif
 
 struct tdmb_dm {
 	unsigned int	rssi;
@@ -172,6 +156,13 @@ struct tdmb_i2c_dev {
 struct tdmb_dt_platform_data {
 	int tdmb_irq;
 	int tdmb_en;
+	int tdmb_1p2_en;
+	int tdmb_lna_en;
+	int fm_dtv_ctrl1;
+	int fm_dtv_ctrl2;
+	bool tdmb_lna_gpio_req;
+	bool fm_dtv_ctrl1_gpio_req;
+	bool fm_dtv_ctrl2_gpio_req;
 	int tdmb_rst;
 	int tdmb_use_rst;
 	int tdmb_use_irq;
@@ -208,11 +199,6 @@ struct tdmb_drv_func {
 						bool factory_test);
 	void (*pull_data) (void);
 	unsigned long (*get_int_size) (void);
-	
-	int (*byte_write)(u16 addr, u8 data);
-	int (*byte_read)(u16 addr, u8* data);
-	int (*word_write)(u16 addr, u16 data);
-	int (*word_read)(u16 addr, u16* data);
 };
 
 extern unsigned int *tdmb_ts_head;

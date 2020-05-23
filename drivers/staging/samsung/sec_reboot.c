@@ -17,7 +17,11 @@
 #include <linux/input.h>
 #endif
 #include <linux/sec_ext.h>
+#if defined(CONFIG_BATTERY_SAMSUNG_V2)
+#include "../../battery_v2/include/sec_battery.h"
+#else
 #include <linux/battery/sec_battery.h>
+#endif
 #include <linux/sec_batt.h>
 
 #include <asm/cacheflush.h>
@@ -47,6 +51,10 @@ enum sec_reset_reason {
 	SEC_RESET_REASON_FOTA_BL   = (SEC_RESET_REASON_PREFIX | 0x6), /* update bootloader */
 	SEC_RESET_REASON_SECURE    = (SEC_RESET_REASON_PREFIX | 0x7), /* image secure check fail */
 	SEC_RESET_REASON_FWUP      = (SEC_RESET_REASON_PREFIX | 0x9), /* emergency firmware update */
+	SEC_RESET_REASON_BOOTLOADER      = (SEC_RESET_REASON_PREFIX | 0xd),
+#ifdef CONFIG_MUIC_S2MU005
+	SEC_RESET_REASON_MUIC_1K   = (SEC_RESET_REASON_PREFIX | 0xe), /* setting for muic 1k */
+#endif
 	SEC_RESET_REASON_EMERGENCY = 0x0,
 	
 	#ifdef CONFIG_SEC_DEBUG_MDM_SEPERATE_CRASH
@@ -68,6 +76,7 @@ static void sec_power_off(void)
 	struct power_supply *usb_psy = power_supply_get_by_name("usb");
 	struct power_supply *wc_psy = power_supply_get_by_name("wireless");
 	union power_supply_propval ac_val;
+	union power_supply_propval water_val;
 	union power_supply_propval usb_val;
 	union power_supply_propval wc_val;
 
@@ -104,17 +113,22 @@ static void sec_power_off(void)
 	ac_psy->get_property(ac_psy, POWER_SUPPLY_PROP_ONLINE, &ac_val);
 	usb_psy->get_property(usb_psy, POWER_SUPPLY_PROP_ONLINE, &usb_val);
 	wc_psy->get_property(wc_psy, POWER_SUPPLY_PROP_ONLINE, &wc_val);
+#if defined(CONFIG_BATTERY_SAMSUNG_V2)
+	ac_psy->get_property(ac_psy, POWER_SUPPLY_EXT_PROP_WATER_DETECT, &water_val);
+#else
+	water_val.intval = 0;
+#endif
 
-	pr_info("[%s] AC[%d] : USB[%d] : WC[%d]\n", __func__,
-		ac_val.intval, usb_val.intval, wc_val.intval);
+	pr_info("[%s] AC[%d] : USB[%d] : WC[%d] : WATER[%d]\n", __func__,
+		ac_val.intval, usb_val.intval, wc_val.intval, water_val.intval);
 
 	while (1) {
 		/* Check reboot charging */
 #ifdef CONFIG_SAMSUNG_BATTERY
-		if ((ac_val.intval || usb_val.intval || wc_val.intval ||
+		if ((ac_val.intval || water_val.intval || usb_val.intval || wc_val.intval ||
 		     (poweroff_try >= 5)) && !lpcharge) {
 #else
-		if ((ac_val.intval || usb_val.intval || wc_val.intval ||
+		if ((ac_val.intval || water_val.intval || usb_val.intval || wc_val.intval ||
 		     (poweroff_try >= 5))) {
 #endif
 			pr_emerg("%s: charger connected or power off "
@@ -123,6 +137,9 @@ static void sec_power_off(void)
 			/* To enter LP charging */
 			exynos_pmu_write(EXYNOS_PMU_INFORM2, SEC_POWER_OFF);
 
+#ifdef CONFIG_SEC_DEBUG
+			sec_debug_reboot_handler();
+#endif
 			flush_cache_all();
 			mach_restart(REBOOT_SOFT, "sw reset");
 
@@ -134,6 +151,11 @@ static void sec_power_off(void)
 		/* wait for power button release */
 		if (gpio_get_value(powerkey_gpio)) {
 			pr_emerg("%s: set PS_HOLD low\n", __func__);
+
+#ifdef CONFIG_SEC_DEBUG
+			sec_debug_reboot_handler();
+			flush_cache_all();
+#endif
 
 			/* power off code
 			 * PS_HOLD Out/High -->
@@ -161,7 +183,6 @@ static void sec_reboot(enum reboot_mode reboot_mode, const char *cmd)
 
 	/* LPM mode prevention */
 	exynos_pmu_write(EXYNOS_PMU_INFORM2, SEC_POWER_RESET);
-	exynos_pmu_write(EXYNOS_PMU_INFORM3, SEC_RESET_REASON_UNKNOWN);
 
 	if (cmd) {
 		unsigned long value;
@@ -173,6 +194,8 @@ static void sec_reboot(enum reboot_mode reboot_mode, const char *cmd)
 			exynos_pmu_write(EXYNOS_PMU_INFORM3, SEC_RESET_REASON_RECOVERY);
 		else if (!strcmp(cmd, "download"))
 			exynos_pmu_write(EXYNOS_PMU_INFORM3, SEC_RESET_REASON_DOWNLOAD);
+		else if (!strcmp(cmd, "bootloader"))
+			exynos_pmu_write(EXYNOS_PMU_INFORM3, SEC_RESET_REASON_BOOTLOADER);
 		else if (!strcmp(cmd, "upload"))
 			exynos_pmu_write(EXYNOS_PMU_INFORM3, SEC_RESET_REASON_UPLOAD);
 		else if (!strcmp(cmd, "secure"))
@@ -184,6 +207,10 @@ static void sec_reboot(enum reboot_mode reboot_mode, const char *cmd)
 		else if (!strncmp(cmd, "debug", 5)
 			 && !kstrtoul(cmd + 5, 0, &value))
 			exynos_pmu_write(EXYNOS_PMU_INFORM3, SEC_RESET_SET_DEBUG | value);
+#ifdef CONFIG_MUIC_S2MU005
+		else if (!strcmp(cmd, "muic_1k"))
+			exynos_pmu_write(EXYNOS_PMU_INFORM3, SEC_RESET_REASON_MUIC_1K);
+#endif
 #ifdef CONFIG_SEC_DEBUG_MDM_SEPERATE_CRASH
 		else if (!strncmp(cmd, "cpdebug", 7)
 			 && !kstrtoul(cmd + 7, 0, &value))
@@ -201,6 +228,16 @@ static void sec_reboot(enum reboot_mode reboot_mode, const char *cmd)
 			exynos_pmu_write(EXYNOS_PMU_INFORM3, SEC_RESET_SET_DIAG | (value & 0x1));
 		}
 #endif
+		else if (!strncmp(cmd, "panic", 5)) {
+			/*
+			 * This line is intentionally blanked because the INFORM3 is used for upload cause
+			 * in sec_debug_set_upload_cause() only in case of  panic() .
+			 */
+		} else {
+			exynos_pmu_write(EXYNOS_PMU_INFORM3, SEC_RESET_REASON_UNKNOWN);
+		}
+	} else {
+		exynos_pmu_write(EXYNOS_PMU_INFORM3, SEC_RESET_REASON_UNKNOWN);
 	}
 
 	flush_cache_all();

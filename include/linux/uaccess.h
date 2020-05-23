@@ -2,6 +2,9 @@
 #define __LINUX_UACCESS_H__
 
 #include <linux/preempt.h>
+
+#define uaccess_kernel() segment_eq(get_fs(), KERNEL_DS)
+
 #include <asm/uaccess.h>
 
 /*
@@ -106,5 +109,12 @@ extern long __probe_kernel_read(void *dst, const void *src, size_t size);
  */
 extern long notrace probe_kernel_write(void *dst, const void *src, size_t size);
 extern long notrace __probe_kernel_write(void *dst, const void *src, size_t size);
+
+#ifndef user_access_begin
+#define user_access_begin() do { } while (0)
+#define user_access_end() do { } while (0)
+#define unsafe_get_user(x, ptr, err) do { if (unlikely(__get_user(x, ptr))) goto err; } while (0)
+#define unsafe_put_user(x, ptr, err) do { if (unlikely(__put_user(x, ptr))) goto err; } while (0)
+#endif
 
 #endif		/* __LINUX_UACCESS_H__ */

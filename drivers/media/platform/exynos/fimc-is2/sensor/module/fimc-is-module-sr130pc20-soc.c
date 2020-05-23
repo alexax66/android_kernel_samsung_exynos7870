@@ -2101,6 +2101,7 @@ static const struct of_device_id exynos_fimc_is_sensor_sr130pc20_match[] = {
 
 static const struct i2c_device_id sensor_sr130pc20_idt[] = {
 	{ SENSOR_NAME, 0 },
+	{},
 };
 
 static struct i2c_driver sensor_sr130pc20_driver = {

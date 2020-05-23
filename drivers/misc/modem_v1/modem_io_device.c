@@ -512,9 +512,14 @@ static int misc_release(struct inode *inode, struct file *filp)
 	struct io_device *iod = (struct io_device *)filp->private_data;
 	struct modem_shared *msd = iod->msd;
 	struct link_device *ld;
+	int i;
 
-	if (atomic_dec_and_test(&iod->opened))
+	if (atomic_dec_and_test(&iod->opened)) {
 		skb_queue_purge(&iod->sk_rx_q);
+
+		for (i = 0; i < NUM_SIPC_MULTI_FRAME_IDS; i++)
+			skb_queue_purge(&iod->sk_multi_q[i]);
+	}
 
 	list_for_each_entry(ld, &msd->link_dev_list, list) {
 		if (IS_CONNECTED(iod, ld) && ld->terminate_comm)
@@ -852,6 +857,8 @@ static ssize_t misc_write(struct file *filp, const char __user *data,
 	unsigned int copied = 0, tot_frame = 0, copied_frm = 0;
 	unsigned int remains;
 	unsigned int alloc_size;
+	/* 64bit prevent */
+	unsigned int cnt = (unsigned int)count;
 #ifdef DEBUG_MODEM_IF
 	struct timespec ts;
 #endif
@@ -871,15 +878,15 @@ static ssize_t misc_write(struct file *filp, const char __user *data,
 	}
 
 	if (iod->link_header) {
-		cfg = sipc5_build_config(iod, ld, count);
+		cfg = sipc5_build_config(iod, ld, cnt);
 		headroom = sipc5_get_hdr_len(&cfg);
 	} else {
 		cfg = 0;
 		headroom = 0;
 	}
 
-	while (copied < count) {
-		remains = count - copied;
+	while (copied < cnt) {
+		remains = cnt - copied;
 		alloc_size = min_t(unsigned int, remains + headroom,
 			iod->max_tx_size ?: remains + headroom);
 
@@ -936,7 +943,7 @@ static ssize_t misc_write(struct file *filp, const char __user *data,
 		if (cfg) {
 			buff = skb_push(skb, headroom);
 			sipc5_build_header(iod, buff, cfg,
-					tx_bytes, count - copied);
+					tx_bytes, cnt - copied);
 		}
 
 		/* Apply padding */
@@ -1075,7 +1082,9 @@ static int vnet_stop(struct net_device *ndev)
 			ld->terminate_comm(ld, iod);
 	}
 
+	spin_lock(&msd->active_list_lock);
 	list_del(&iod->node_ndev);
+	spin_unlock(&msd->active_list_lock);
 	netif_stop_queue(ndev);
 
 	mif_info("%s (opened %d) by %s\n",
@@ -1233,6 +1242,12 @@ drop:
 	return NETDEV_TX_OK;
 }
 
+static u16 vnet_select_queue(struct net_device *dev, struct sk_buff *skb,
+		void *accel_priv, select_queue_fallback_t fallback)
+{
+	return (skb && skb->priomark == RAW_HPRIO) ? 1 : 0;
+}
+
 static int dummy_net_open(struct net_device *ndev)
 {
 	return -EINVAL;
@@ -1246,6 +1261,7 @@ static struct net_device_ops vnet_ops = {
 	.ndo_open = vnet_open,
 	.ndo_stop = vnet_stop,
 	.ndo_start_xmit = vnet_xmit,
+	.ndo_select_queue = vnet_select_queue,
 };
 
 static void vnet_setup(struct net_device *ndev)
@@ -1395,11 +1411,13 @@ int sipc5_init_io_device(struct io_device *iod)
 		INIT_LIST_HEAD(&iod->node_ndev);
 
 		if (iod->use_handover)
-			iod->ndev = alloc_netdev(0, iod->name, NET_NAME_UNKNOWN,
-					vnet_setup_ether);
+			iod->ndev = alloc_netdev_mqs(sizeof(struct vnet),
+				iod->name, NET_NAME_UNKNOWN, vnet_setup_ether,
+				MAX_NDEV_TX_Q, MAX_NDEV_RX_Q);
 		else
-			iod->ndev = alloc_netdev(0, iod->name, NET_NAME_UNKNOWN,
-					vnet_setup);
+			iod->ndev = alloc_netdev_mqs(sizeof(struct vnet),
+				iod->name, NET_NAME_UNKNOWN, vnet_setup,
+				MAX_NDEV_TX_Q, MAX_NDEV_RX_Q);
 
 		if (!iod->ndev) {
 			mif_info("%s: ERR! alloc_netdev fail\n", iod->name);
@@ -1412,9 +1430,9 @@ int sipc5_init_io_device(struct io_device *iod)
 			free_netdev(iod->ndev);
 		}
 
-		mif_debug("iod 0x%p\n", iod);
+		mif_debug("iod 0x%pK\n", iod);
 		vnet = netdev_priv(iod->ndev);
-		mif_debug("vnet 0x%p\n", vnet);
+		mif_debug("vnet 0x%pK\n", vnet);
 		vnet->iod = iod;
 
 		break;
@@ -1424,7 +1442,6 @@ int sipc5_init_io_device(struct io_device *iod)
 
 		iod->miscdev.minor = MISC_DYNAMIC_MINOR;
 		iod->miscdev.name = iod->name;
-		iod->miscdev.fops = &misc_io_fops;
 
 		ret = misc_register(&iod->miscdev);
 		if (ret)
@@ -1458,5 +1475,37 @@ int sipc5_init_io_device(struct io_device *iod)
 		skb_queue_head_init(&iod->sk_multi_q[i]);
 
 	return ret;
+}
+
+void sipc5_deinit_io_device(struct io_device *iod)
+{
+	mif_err("%s: io_typ=%d\n", iod->name, iod->io_typ);
+
+	wake_lock_destroy(&iod->wakelock);
+	
+	/* De-register misc or net device */
+	switch (iod->io_typ) {
+	case IODEV_MISC:
+		if (iod->id == SIPC_CH_ID_CPLOG1) {
+			unregister_netdev(iod->ndev);
+			free_netdev(iod->ndev);
+		}
+
+		misc_deregister(&iod->miscdev);
+		break;
+		
+	case IODEV_NET:
+		unregister_netdev(iod->ndev);
+		free_netdev(iod->ndev);
+		break;
+
+	case IODEV_DUMMY:
+		device_remove_file(iod->miscdev.this_device, &attr_waketime);
+		device_remove_file(iod->miscdev.this_device, &attr_loopback);
+		device_remove_file(iod->miscdev.this_device, &attr_txlink);
+		
+		misc_deregister(&iod->miscdev);
+		break;
+	}
 }
 

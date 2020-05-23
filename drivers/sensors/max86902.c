@@ -199,7 +199,7 @@ static int max86900_regulator_onoff(struct max86900_device_data *data, int onoff
 			return -ENODEV;
 		}
 	}
-	
+
 	pr_info("%s - onoff = %d\n", __func__, onoff);
 
 	if (onoff == HRM_LDO_ON) {
@@ -3628,7 +3628,7 @@ static ssize_t eol_test_result_store(struct device *dev,
 	if (buf_len > MAX_EOL_RESULT)
 		buf_len = MAX_EOL_RESULT;
 
-	mutex_lock(&data->storelock);	
+	mutex_lock(&data->storelock);
 
 	if (data->eol_test_result != NULL)
 		kfree(data->eol_test_result);
@@ -3741,14 +3741,14 @@ static ssize_t max86900_lib_ver_store(struct device *dev,
 	if (buf_len > MAX_LIB_VER)
 		buf_len = MAX_LIB_VER;
 
-	mutex_lock(&data->storelock);	
+	mutex_lock(&data->storelock);
 
 	if (data->lib_ver != NULL)
 		kfree(data->lib_ver);
 
 	data->lib_ver = kzalloc(sizeof(char) * buf_len, GFP_KERNEL);
 	if (data->lib_ver == NULL) {
-		pr_err("%s - couldn't allocate memory\n", __func__);		mutex_unlock(&data->storelock);		
+		pr_err("%s - couldn't allocate memory\n", __func__);		mutex_unlock(&data->storelock);
 		return -ENOMEM;
 	}
 	strncpy(data->lib_ver, buf, buf_len);
@@ -4311,7 +4311,7 @@ static ssize_t max86900_uv_lib_ver_store(struct device *dev,
 
 	data->uv_lib_ver = kzalloc(sizeof(char) * buf_len, GFP_KERNEL);
 	if (data->uv_lib_ver == NULL) {
-		pr_err("%s - couldn't allocate memory\n", __func__);		mutex_unlock(&data->storelock);		
+		pr_err("%s - couldn't allocate memory\n", __func__);		mutex_unlock(&data->storelock);
 		return -ENOMEM;
 	}
 	strncpy(data->uv_lib_ver, buf, buf_len);
@@ -4934,7 +4934,7 @@ int max86900_probe(struct i2c_client *client, const struct i2c_device_id *id)
 	}
 
 	/* set sysfs for hrm sensor */
-	err = sensors_register(data->dev, data, hrm_sensor_attrs,
+	err = sensors_register(&data->dev, data, hrm_sensor_attrs,
 			MODULE_NAME_HRM);
 	if (err) {
 		pr_err("[SENSOR] %s - cound not register hrm_sensor(%d).\n",
@@ -4979,7 +4979,7 @@ int max86900_probe(struct i2c_client *client, const struct i2c_device_id *id)
 	}
 
 	/* set sysfs for hrm led sensor */
-	err = sensors_register(data->dev, data, hrmled_sensor_attrs,
+	err = sensors_register(&data->dev, data, hrmled_sensor_attrs,
 			MODULE_NAME_HRM_LED);
 	if (err) {
 		pr_err("[SENSOR] %s - cound not register hrm_sensor(%d).\n",
@@ -5024,7 +5024,7 @@ int max86900_probe(struct i2c_client *client, const struct i2c_device_id *id)
 		}
 
 		/* set sysfs for uv sensor */
-		err = sensors_register(data->dev, data, uv_sensor_attrs,
+		err = sensors_register(&data->dev, data, uv_sensor_attrs,
 				MODULE_NAME_UV);
 		if (err) {
 			pr_err("[SENSOR] %s - cound not register hrm_sensor(%d).\n",

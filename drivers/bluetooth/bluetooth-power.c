@@ -33,9 +33,12 @@
 #include <linux/serial_core.h>
 #include <linux/wakelock.h>
 #include <linux/serial_s3c.h>
+#include <soc/samsung/exynos-powermode.h>
 #define BT_UPORT 0
 #define BT_LPM_ENABLE
 //#define ACTIVE_LOW_WAKE_HOST_GPIO
+#define STATUS_IDLE	1
+#define STATUS_BUSY	0
 
 #ifdef BT_LPM_ENABLE
 extern s3c_wake_peer_t s3c2410_serial_wake_peer[CONFIG_SERIAL_SAMSUNG_UARTS];
@@ -58,6 +61,7 @@ struct _bt_lpm {
 #define BT_PWR_INFO(fmt, arg...) pr_info("%s: " fmt "\n" , __func__ , ## arg)
 #define BT_PWR_ERR(fmt, arg...)  pr_err("%s: " fmt "\n" , __func__ , ## arg)
 
+int idle_ip_index;
 
 static struct of_device_id bt_power_match_table[] = {
 	{	.compatible = "qca,ar3002" },
@@ -183,12 +187,14 @@ static int bt_configure_gpios(int on)
 	BT_PWR_DBG("%s  bt_gpio= %d on: %d", __func__, bt_reset_gpio, on);
 
 	if (on) {
+		exynos_update_ip_idle_status(idle_ip_index, STATUS_BUSY);
 		gpio_set_value(bt_reset_gpio, 0);
 		msleep(50);
 		gpio_set_value(bt_reset_gpio, 1);
 		msleep(50);
 	} else {
 		gpio_set_value(bt_reset_gpio, 0);
+		exynos_update_ip_idle_status(idle_ip_index, STATUS_IDLE);
 		msleep(100);
 	}
 	return rc;
@@ -480,6 +486,8 @@ static enum hrtimer_restart enter_lpm(struct hrtimer *timer)
 	if (bt_lpm.uport != NULL)
 		set_wake_locked(0);
 
+    if (bt_lpm.host_wake == 0)
+	    exynos_update_ip_idle_status(idle_ip_index, STATUS_IDLE);
 	wake_lock_timeout(&bt_lpm.bt_wake_lock, HZ/2);
 
 	return HRTIMER_NORESTART;
@@ -490,6 +498,7 @@ void qcomm_bt_lpm_exit_lpm_locked(struct uart_port *uport)
 	bt_lpm.uport = uport;
 
 	hrtimer_try_to_cancel(&bt_lpm.enter_lpm_timer);
+	exynos_update_ip_idle_status(idle_ip_index, STATUS_BUSY);
 	set_wake_locked(1);
 
 	hrtimer_start(&bt_lpm.enter_lpm_timer, bt_lpm.enter_lpm_delay,
@@ -504,6 +513,7 @@ static void update_host_wake_locked(int host_wake)
 	bt_lpm.host_wake = host_wake;
 
 	if (host_wake) {
+		exynos_update_ip_idle_status(idle_ip_index, STATUS_BUSY);
 		wake_lock(&bt_lpm.host_wake_lock);
 	} else  {
 		/* Take a timed wakelock, so that upper layers can take it.
@@ -512,6 +522,9 @@ static void update_host_wake_locked(int host_wake)
 		 */
 		BT_PWR_ERR("[BT] update_host_wake_locked host_wake is deasserted. release wakelock in 1s\n");
 		wake_lock_timeout(&bt_lpm.host_wake_lock, HZ/2);
+		
+        if (bt_lpm.dev_wake == 0)
+            exynos_update_ip_idle_status(idle_ip_index, STATUS_IDLE);
 	}
 }
 
@@ -617,7 +630,9 @@ static int bt_power_probe(struct platform_device *pdev)
 #ifdef BT_LPM_ENABLE
 	qcomm_bt_lpm_init(pdev);
 #endif
-	
+	idle_ip_index = exynos_get_idle_ip_index("bluetooth");
+	exynos_update_ip_idle_status(idle_ip_index, STATUS_IDLE);
+
 	return 0;
 
 free_pdata:

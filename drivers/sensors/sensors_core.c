@@ -191,21 +191,11 @@ static struct device_attribute *sensor_attr[] = {
 	NULL,
 };
 
-static void set_sensor_attr(struct device *dev,
-		struct device_attribute *attributes[])
-{
-	int i;
-
-	for (i = 0; attributes[i] != NULL; i++)
-		if ((device_create_file(dev, attributes[i])) < 0)
-			pr_err("[SENSOR CORE] fail device_create_file"\
-				"(dev, attributes[%d])\n", i);
-}
-
-int sensors_register(struct device *dev, void *drvdata,
+int sensors_register(struct device **dev, void *drvdata,
 		struct device_attribute *attributes[], char *name)
 {
 	int ret = 0;
+	int i;
 
 	if (sensors_class == NULL) {
 		sensors_class = class_create(THIS_MODULE, "sensors");
@@ -213,14 +203,17 @@ int sensors_register(struct device *dev, void *drvdata,
 			return PTR_ERR(sensors_class);
 	}
 
-	dev = device_create(sensors_class, NULL, 0, drvdata, "%s", name);
-	if (IS_ERR(dev)) {
-		ret = PTR_ERR(dev);
+	*dev = device_create(sensors_class, NULL, 0, drvdata, "%s", name);
+	if (IS_ERR(*dev)) {
+		ret = PTR_ERR(*dev);
 		pr_err("[SENSORS CORE] device_create failed![%d]\n", ret);
 		return ret;
 	}
 
-	set_sensor_attr(dev, attributes);
+	for (i = 0; attributes[i] != NULL; i++)
+		if ((device_create_file(*dev, attributes[i])) < 0)
+			pr_err("[SENSOR CORE] fail device_create_file"\
+				"(dev, attributes[%d])\n", i);
 	atomic_inc(&sensor_count);
 
 	return ret;
@@ -275,6 +268,7 @@ int sensors_input_init(void)
 	if (ret < 0) {
 		pr_err("[SENSOR CORE] failed register meta dev\n");
 		input_free_device(meta_input_dev);
+		return ret;
 	}
 
 	ret = sensors_create_symlink(&meta_input_dev->dev.kobj,
@@ -282,7 +276,6 @@ int sensors_input_init(void)
 	if (ret < 0) {
 		pr_err("[SENSOR CORE] failed create meta symlink\n");
 		input_unregister_device(meta_input_dev);
-		input_free_device(meta_input_dev);
 	}
 
 	return ret;
@@ -293,7 +286,6 @@ void sensors_input_clean(void)
 	sensors_remove_symlink(&meta_input_dev->dev.kobj,
 		meta_input_dev->name);
 	input_unregister_device(meta_input_dev);
-	input_free_device(meta_input_dev);
 }
 
 static int __init sensors_class_init(void)

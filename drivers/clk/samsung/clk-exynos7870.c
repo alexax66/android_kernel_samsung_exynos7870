@@ -139,7 +139,7 @@ static struct init_vclk exynos7870_peri_vclks[] __initdata = {
 	VCLK(i2c_touchkey, gate_peri_i2c_touchkey, "gate_peri_i2c_touchkey", 0, 0, NULL),
 	VCLK(i2c_fuelgauge, gate_peri_i2c_fuelgauge, "gate_peri_i2c_fuelgauge", 0, 0, NULL),
 	VCLK(i2c_spkamp, gate_peri_i2c_spkamp, "gate_peri_i2c_spkamp", 0, 0, NULL),
-	VCLK(i2c_nfc, gate_peri_i2c_nfc, "gate_peri_i2c_nfc", 0, 0, NULL),
+	VCLK(i2c_nfc, gate_peri_i2c_nfc, "gate_peri_i2c_nfc", 0, 0, "i2c2_pclk"),
 	VCLK(i2c_muic, gate_peri_i2c_muic, "gate_peri_i2c_muic", 0, 0, NULL),
 	VCLK(i2c_ifpmic, gate_peri_i2c_ifpmic, "gate_peri_i2c_ifpmic", 0, 0, NULL),
 	/* PERI HSI2C ACLK */
@@ -159,7 +159,7 @@ static struct init_vclk exynos7870_peri_vclks[] __initdata = {
 	VCLK(wdt_cpucl0, gate_peri_wdt_cpucl0, "gate_peri_wdt_cpucl0", 0, 0, NULL),
 	VCLK(wdt_cpucl1, gate_peri_wdt_cpucl1, "gate_peri_wdt_cpucl1", 0, 0, NULL),
 	/* PERI UART ACLK */
-	VCLK(uart_debug, gate_peri_uart_debug, "gate_peri_uart_debug", 0, 0, "console-pclk0"),
+	VCLK(uart_debug, gate_peri_uart_debug, "gate_peri_uart_debug", 0, 0, "console-pclk2"),
 	VCLK(uart_btwififm, gate_peri_uart_btwififm, "gate_peri_uart_btwififm", 0, 0, NULL),
 	VCLK(uart_sensor, gate_peri_uart_sensor, "gate_peri_uart_sensor", 0, 0, NULL),
 	/* PERI TMU ACLK */
@@ -200,7 +200,7 @@ static struct init_vclk exynos7870_fsys_vclks[] __initdata = {
 	VCLK(fsys_rtic, gate_fsys_rtic, "gate_fsys_rtic", 0, 0, NULL),
 	VCLK(fsys_pdma0, gate_fsys_pdma0, "gate_fsys_pdma0", 0, 0, NULL),
 #ifdef CONFIG_SENSORS_FINGERPRINT
-	VCLK(fsys_pdma1, gate_fsys_pdma1, "gate_fsys_pdma1", 0, 0, "fp-spi-dma"),
+	VCLK(fsys_pdma1, gate_fsys_pdma1, "gate_fsys_pdma1", 0, 0, "apb_pclk"),
 #else
 	VCLK(fsys_pdma1, gate_fsys_pdma1, "gate_fsys_pdma1", 0, 0, NULL),
 #endif
@@ -273,7 +273,7 @@ static struct init_vclk exynos7870_mif_vclks[] __initdata = {
 	VCLK(usb20drd_sclk, sclk_usb20drd, "sclk_usb20drd" , 0, 0, NULL),
 	VCLK(uart_sensor_sclk, sclk_uart_sensor, "sclk_uart_sensor", 0, 0, "console-sclk0"),
 	VCLK(uart_btwififm_sclk, sclk_uart_btwififm, "sclk_uart_btwififm", 0, 0, NULL),
-	VCLK(uart_debug_sclk, sclk_uart_debug, "sclk_uart_debug", 0, 0, NULL),
+	VCLK(uart_debug_sclk, sclk_uart_debug, "sclk_uart_debug", 0, 0, "console-sclk2"),
 	VCLK(spi_frontfrom_sclk, sclk_spi_frontfrom, "sclk_spi_frontfrom", 0, 0, NULL),
 	VCLK(spi_rearfrom_sclk, sclk_spi_rearfrom, "sclk_spi_rearfrom", 0, 0, NULL),
 #ifdef CONFIG_SENSORS_FINGERPRINT

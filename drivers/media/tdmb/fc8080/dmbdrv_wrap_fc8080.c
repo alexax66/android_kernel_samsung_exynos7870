@@ -315,26 +315,6 @@ unsigned char dmb_drv_scan_ch(unsigned long frequency)
 	return TDMB_SUCCESS;
 }
 
-int dmb_drv_byte_write(u16 addr, u8 data)
-{
-	return bbm_com_byte_write(NULL, addr, data);
-}
-
-int dmb_drv_byte_read(u16 addr, u8* data)
-{
-	return bbm_com_byte_read(NULL, addr, data);
-}
-
-int dmb_drv_word_write(u16 addr, u16 data)
-{
-	return bbm_com_word_write(NULL, addr, data);
-}
-
-int dmb_drv_word_read(u16 addr, u16* data)
-{
-	return bbm_com_word_read(NULL, addr, data);
-}
-
 int dmb_drv_get_dmb_sub_ch_cnt()
 {
 	int i, n;
@@ -531,7 +511,8 @@ struct sub_channel_info_type *dmb_drv_get_fic_dmb(int subchannel_count)
 						= svc_info->sid;
 					dmb_subchannel_info.scids
 						= svc_info->scids;
-
+					dmb_subchannel_info.ucCAFlag
+						= svc_info->ca_flag;
 					num_of_user_appl =
 						svc_info->num_of_user_appl;
 					dmb_subchannel_info.num_of_user_appl
@@ -601,13 +582,15 @@ struct sub_channel_info_type *dmb_drv_get_fic_dab(int subchannel_count)
 						svc_info->sid;
 					dab_subchannel_info.scids =
 						svc_info->scids;
+					dab_subchannel_info.ucCAFlag =
+						svc_info->ca_flag;
 
 					esb = fic_decoder_get_ensemble_info(0);
 					if (esb->flag == 99)
-						dmb_subchannel_info.uiEnsembleID
+						dab_subchannel_info.uiEnsembleID
 						= esb->eid;
 					else
-						dmb_subchannel_info.uiEnsembleID
+						dab_subchannel_info.uiEnsembleID
 						= 0;
 					dab_subchannel_info.ecc	= esb->ecc;
 
@@ -653,6 +636,8 @@ struct sub_channel_info_type *dmb_drv_get_fic_dat(int subchannel_count)
 						svc_info->sid;
 					dat_subchannel_info.scids =
 						svc_info->scids;
+					dat_subchannel_info.ucCAFlag
+						= svc_info->ca_flag;
 
 					num_of_user_appl =
 						svc_info->num_of_user_appl;

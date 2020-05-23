@@ -175,6 +175,10 @@ static void audio_buffdone(void *data)
 		return;
 
 	prtd = substream->runtime->private_data;
+
+	if (!prtd->params || !prtd->params->ch)
+		return;
+
 	if (prtd->state & ST_RUNNING) {
 		prtd->params->ops->getposition(prtd->params->ch, &src, &dst);
 		if (substream->stream == SNDRV_PCM_STREAM_CAPTURE)
@@ -220,9 +224,6 @@ static int dma_hw_params(struct snd_pcm_substream *substream,
 	 * codec <--> BT codec or GSM modem -- lg FIXME */
 	if (!dma)
 		return 0;
-
-	lpass_set_ip_idle((substream->stream == SNDRV_PCM_STREAM_CAPTURE) &&
-			(totbytes <= RX_SRAM_SIZE) && sram_rx_buf);
 
 	/* this may get called several times by oss emulation
 	 * with different params -HW */
@@ -301,15 +302,18 @@ static int dma_hw_params(struct snd_pcm_substream *substream,
 static int dma_hw_free(struct snd_pcm_substream *substream)
 {
 	struct runtime_data *prtd = substream->runtime->private_data;
+	int ret;
 
-	pr_debug("Entered %s\n", __func__);
+	pr_info("Entered %s\n", __func__);
 
 	snd_pcm_set_runtime_buffer(substream, NULL);
 
 	if (prtd->params) {
-		prtd->params->ops->flush(prtd->params->ch);
-		prtd->params->ops->release(prtd->params->ch,
+		ret = prtd->params->ops->flush(prtd->params->ch);
+		pr_info("%s:DMA flush retrun value:%d\n", __func__, ret);
+		ret = prtd->params->ops->release(prtd->params->ch,
 					prtd->params->client);
+		pr_info("%s:DMA release retrun value:%d\n", __func__, ret);
 		prtd->params = NULL;
 	}
 

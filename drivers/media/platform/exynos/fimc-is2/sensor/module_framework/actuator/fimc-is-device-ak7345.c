@@ -23,7 +23,14 @@
 
 #include "fimc-is-helper-i2c.h"
 
+#include "interface/fimc-is-interface-library.h"
+
 #define ACTUATOR_NAME		"AK7345"
+
+#define DEF_AK7345_FIRST_POSITION		120
+#define DEF_AK7345_FIRST_DELAY			30
+
+extern struct fimc_is_lib_support gPtr_lib_support;
 
 static int sensor_ak7345_write_position(struct i2c_client *client, u32 val)
 {
@@ -61,13 +68,21 @@ int sensor_ak7345_actuator_init(struct v4l2_subdev *subdev, u32 val)
 {
 	int ret = 0;
 	u8 product_id = 0;
-	u8 init_pos = 0;
 	struct fimc_is_actuator *actuator;
 	struct i2c_client *client = NULL;
+#ifdef USE_CAMERA_HW_BIG_DATA
+	struct fimc_is_device_sensor *device = NULL;
+	struct cam_hw_param *hw_param = NULL;
+#endif
 #ifdef DEBUG_ACTUATOR_TIME
 	struct timeval st, end;
 	do_gettimeofday(&st);
 #endif
+
+	long cal_addr;
+	u32 cal_data;
+
+	int first_position = DEF_AK7345_FIRST_POSITION;
 
 	BUG_ON(!subdev);
 
@@ -87,8 +102,21 @@ int sensor_ak7345_actuator_init(struct v4l2_subdev *subdev, u32 val)
 	}
 
 	ret = fimc_is_sensor_addr8_read8(client, 0x03, &product_id);
-	if (ret < 0)
+	if (ret < 0) {
+#ifdef USE_CAMERA_HW_BIG_DATA
+		device = v4l2_get_subdev_hostdata(subdev);
+		if (device) {
+			if (device->position == SENSOR_POSITION_REAR) {
+				fimc_is_sec_get_rear_hw_param(&hw_param);
+			} else if (device->position == SENSOR_POSITION_FRONT) {
+				fimc_is_sec_get_front_hw_param(&hw_param);
+			}
+		}
+		if (hw_param)
+			hw_param->i2c_af_err_cnt++;
+#endif
 		goto p_err;
+	}
 
 #if 0
 	if (product_id != AK7345_PRODUCT_ID) {
@@ -97,24 +125,31 @@ int sensor_ak7345_actuator_init(struct v4l2_subdev *subdev, u32 val)
 	}
 #endif
 
-        /* ToDo: Cal init data from FROM */
-	init_pos = 120;
+	/* EEPROM AF calData address */
+	if (gPtr_lib_support.binary_load_flg) {
+		/* get pan_focus */
+		cal_addr = gPtr_lib_support.minfo->kvaddr_rear_cal + EEPROM_OEM_BASE;
+		memcpy((void *)&cal_data, (void *)cal_addr, sizeof(cal_data));
 
-	ret = sensor_ak7345_write_position(client, init_pos);
+		if (cal_data > 0)
+			first_position = cal_data;
+	} else {
+		warn("SDK library is not loaded");
+	}
+
+	ret = sensor_ak7345_write_position(client, first_position);
 	if (ret <0)
 		goto p_err;
-	actuator->position = init_pos;
+	actuator->position = first_position;
 
 	/* Go active mode */
 	ret = fimc_is_sensor_addr8_write8(client, 0x02, 0);
 	if (ret <0)
 		goto p_err;
 
-	dbg_sensor("initial position: %d\n", init_pos);
+	dbg_sensor("initial position: %d\n", first_position);
 
-	/* ToDo */
-	/* Wait Settling(>20ms) */
-	/* SysSleep(30/MS_PER_TICK, NULL); */
+	mdelay(DEF_AK7345_FIRST_DELAY);
 
 #ifdef DEBUG_ACTUATOR_TIME
 	do_gettimeofday(&end);
@@ -382,6 +417,7 @@ MODULE_DEVICE_TABLE(of, exynos_fimc_is_ak7345_match);
 
 static const struct i2c_device_id actuator_ak7345_idt[] = {
 	{ ACTUATOR_NAME, 0 },
+	{},
 };
 
 static struct i2c_driver actuator_ak7345_driver = {

@@ -64,6 +64,10 @@
 #include <asm/io.h>
 #include <asm/unistd.h>
 
+#ifdef CONFIG_SECURITY_DEFEX
+#include <linux/defex.h>
+#endif
+
 #ifndef SET_UNALIGN_CTL
 # define SET_UNALIGN_CTL(a, b)	(-EINVAL)
 #endif
@@ -116,6 +120,54 @@ int fs_overflowgid = DEFAULT_FS_OVERFLOWUID;
 
 EXPORT_SYMBOL(fs_overflowuid);
 EXPORT_SYMBOL(fs_overflowgid);
+
+#if defined CONFIG_SEC_RESTRICT_SETUID
+int sec_check_execpath(struct mm_struct *mm, char *denypath);
+#if defined CONFIG_SEC_RESTRICT_ROOTING_LOG
+#define PRINT_LOG(...)	printk(KERN_ERR __VA_ARGS__)
+#else
+#define PRINT_LOG(...)
+#endif	// End of CONFIG_SEC_RESTRICT_ROOTING_LOG
+
+static int sec_restrict_uid(void)
+{
+	int ret = 0;
+	struct task_struct *parent_tsk;
+	const struct cred *parent_cred;
+
+	read_lock(&tasklist_lock);
+	parent_tsk = current->parent;
+	if (!parent_tsk) {
+		read_unlock(&tasklist_lock);
+		return 0;
+	}
+
+	get_task_struct(parent_tsk);
+	/* holding on to the task struct is enough so just release
+	 * the tasklist lock here */
+	read_unlock(&tasklist_lock);
+
+	parent_cred = get_task_cred(parent_tsk);
+	if (!parent_cred)
+		goto out;
+	if (parent_cred->euid.val == 0 || parent_tsk->pid == 1) {
+		ret = 0;
+	} else if (sec_check_execpath(current->mm, "/system/bin/pppd")) {
+		PRINT_LOG("VPN allowed to use root permission");
+		ret = 0;
+	} else {
+		PRINT_LOG("Restricted changing UID. PID = %d(%s) PPID = %d(%s)\n",
+			current->pid, current->comm,
+			parent_tsk->pid, parent_tsk->comm);
+		ret = 1;
+	}
+	put_cred(parent_cred);
+out:
+	put_task_struct(parent_tsk);
+
+	return ret;
+}
+#endif // End of CONFIG_SEC_RESTRICT_SETUID
 
 /*
  * Returns true if current's euid is same as p's uid or euid,
@@ -324,6 +376,14 @@ SYSCALL_DEFINE2(setregid, gid_t, rgid, gid_t, egid)
 	int retval;
 	kgid_t krgid, kegid;
 
+#if defined CONFIG_SEC_RESTRICT_SETUID
+	if(rgid == 0 || egid == 0)
+	{
+		if(sec_restrict_uid())
+			return -EACCES;
+	}
+#endif // End of CONFIG_SEC_RESTRICT_SETUID
+
 	krgid = make_kgid(ns, rgid);
 	kegid = make_kgid(ns, egid);
 
@@ -380,6 +440,14 @@ SYSCALL_DEFINE1(setgid, gid_t, gid)
 	struct cred *new;
 	int retval;
 	kgid_t kgid;
+	
+#if defined CONFIG_SEC_RESTRICT_SETUID
+	if(gid == 0)
+	{
+		if(sec_restrict_uid())
+			return -EACCES;
+	}
+#endif // End of CONFIG_SEC_RESTRICT_SETUID
 
 	kgid = make_kgid(ns, gid);
 	if (!gid_valid(kgid))
@@ -457,6 +525,14 @@ SYSCALL_DEFINE2(setreuid, uid_t, ruid, uid_t, euid)
 	int retval;
 	kuid_t kruid, keuid;
 
+#if defined CONFIG_SEC_RESTRICT_SETUID
+	if(ruid == 0 || euid == 0)
+	{
+		if(sec_restrict_uid())
+			return -EACCES;
+	}
+#endif // End of CONFIG_SEC_RESTRICT_SETUID
+
 	kruid = make_kuid(ns, ruid);
 	keuid = make_kuid(ns, euid);
 
@@ -528,6 +604,14 @@ SYSCALL_DEFINE1(setuid, uid_t, uid)
 	int retval;
 	kuid_t kuid;
 
+#if defined CONFIG_SEC_RESTRICT_SETUID
+	if(uid == 0)
+	{
+		if(sec_restrict_uid())
+			return -EACCES;
+	}
+#endif // End of CONFIG_SEC_RESTRICT_SETUID
+
 	kuid = make_kuid(ns, uid);
 	if (!uid_valid(kuid))
 		return -EINVAL;
@@ -574,6 +658,14 @@ SYSCALL_DEFINE3(setresuid, uid_t, ruid, uid_t, euid, uid_t, suid)
 	struct cred *new;
 	int retval;
 	kuid_t kruid, keuid, ksuid;
+
+#if defined CONFIG_SEC_RESTRICT_SETUID
+	if(ruid == 0 || euid == 0 || suid == 0)
+	{
+		if(sec_restrict_uid())
+			return -EACCES;
+	}
+#endif // End of CONFIG_SEC_RESTRICT_SETUID
 
 	kruid = make_kuid(ns, ruid);
 	keuid = make_kuid(ns, euid);
@@ -662,6 +754,14 @@ SYSCALL_DEFINE3(setresgid, gid_t, rgid, gid_t, egid, gid_t, sgid)
 	int retval;
 	kgid_t krgid, kegid, ksgid;
 
+#if defined CONFIG_SEC_RESTRICT_SETUID
+	if(rgid == 0 || egid == 0 || sgid == 0)
+	{
+		if(sec_restrict_uid())
+			return -EACCES;
+	}
+#endif // End of CONFIG_SEC_RESTRICT_SETUID
+
 	krgid = make_kgid(ns, rgid);
 	kegid = make_kgid(ns, egid);
 	ksgid = make_kgid(ns, sgid);
@@ -747,6 +847,11 @@ SYSCALL_DEFINE1(setfsuid, uid_t, uid)
 	if (!uid_valid(kuid))
 		return old_fsuid;
 
+#ifdef CONFIG_SECURITY_DEFEX
+	if (task_defex_enforce(current, NULL, -__NR_setfsuid))
+		return old_fsuid;
+#endif
+
 	new = prepare_creds();
 	if (!new)
 		return old_fsuid;
@@ -785,6 +890,11 @@ SYSCALL_DEFINE1(setfsgid, gid_t, gid)
 	kgid = make_kgid(old->user_ns, gid);
 	if (!gid_valid(kgid))
 		return old_fsgid;
+
+#ifdef CONFIG_SECURITY_DEFEX
+	if (task_defex_enforce(current, NULL, -__NR_setfsgid))
+		return old_fsgid;
+#endif
 
 	new = prepare_creds();
 	if (!new)
@@ -1128,18 +1238,19 @@ static int override_release(char __user *release, size_t len)
 
 SYSCALL_DEFINE1(newuname, struct new_utsname __user *, name)
 {
-	int errno = 0;
+	struct new_utsname tmp;
 
 	down_read(&uts_sem);
-	if (copy_to_user(name, utsname(), sizeof *name))
-		errno = -EFAULT;
+	memcpy(&tmp, utsname(), sizeof(tmp));
 	up_read(&uts_sem);
+	if (copy_to_user(name, &tmp, sizeof(tmp)))
+		return -EFAULT;
 
-	if (!errno && override_release(name->release, sizeof(name->release)))
-		errno = -EFAULT;
-	if (!errno && override_architecture(name))
-		errno = -EFAULT;
-	return errno;
+	if (override_release(name->release, sizeof(name->release)))
+		return -EFAULT;
+	if (override_architecture(name))
+		return -EFAULT;
+	return 0;
 }
 
 #ifdef __ARCH_WANT_SYS_OLD_UNAME
@@ -1148,55 +1259,46 @@ SYSCALL_DEFINE1(newuname, struct new_utsname __user *, name)
  */
 SYSCALL_DEFINE1(uname, struct old_utsname __user *, name)
 {
-	int error = 0;
+	struct old_utsname tmp;
 
 	if (!name)
 		return -EFAULT;
 
 	down_read(&uts_sem);
-	if (copy_to_user(name, utsname(), sizeof(*name)))
-		error = -EFAULT;
+	memcpy(&tmp, utsname(), sizeof(tmp));
 	up_read(&uts_sem);
+	if (copy_to_user(name, &tmp, sizeof(tmp)))
+		return -EFAULT;
 
-	if (!error && override_release(name->release, sizeof(name->release)))
-		error = -EFAULT;
-	if (!error && override_architecture(name))
-		error = -EFAULT;
-	return error;
+	if (override_release(name->release, sizeof(name->release)))
+		return -EFAULT;
+	if (override_architecture(name))
+		return -EFAULT;
+	return 0;
 }
 
 SYSCALL_DEFINE1(olduname, struct oldold_utsname __user *, name)
 {
-	int error;
+	struct oldold_utsname tmp = {};
 
 	if (!name)
 		return -EFAULT;
-	if (!access_ok(VERIFY_WRITE, name, sizeof(struct oldold_utsname)))
-		return -EFAULT;
 
 	down_read(&uts_sem);
-	error = __copy_to_user(&name->sysname, &utsname()->sysname,
-			       __OLD_UTS_LEN);
-	error |= __put_user(0, name->sysname + __OLD_UTS_LEN);
-	error |= __copy_to_user(&name->nodename, &utsname()->nodename,
-				__OLD_UTS_LEN);
-	error |= __put_user(0, name->nodename + __OLD_UTS_LEN);
-	error |= __copy_to_user(&name->release, &utsname()->release,
-				__OLD_UTS_LEN);
-	error |= __put_user(0, name->release + __OLD_UTS_LEN);
-	error |= __copy_to_user(&name->version, &utsname()->version,
-				__OLD_UTS_LEN);
-	error |= __put_user(0, name->version + __OLD_UTS_LEN);
-	error |= __copy_to_user(&name->machine, &utsname()->machine,
-				__OLD_UTS_LEN);
-	error |= __put_user(0, name->machine + __OLD_UTS_LEN);
+	memcpy(&tmp.sysname, &utsname()->sysname, __OLD_UTS_LEN);
+	memcpy(&tmp.nodename, &utsname()->nodename, __OLD_UTS_LEN);
+	memcpy(&tmp.release, &utsname()->release, __OLD_UTS_LEN);
+	memcpy(&tmp.version, &utsname()->version, __OLD_UTS_LEN);
+	memcpy(&tmp.machine, &utsname()->machine, __OLD_UTS_LEN);
 	up_read(&uts_sem);
+	if (copy_to_user(name, &tmp, sizeof(tmp)))
+		return -EFAULT;
 
-	if (!error && override_architecture(name))
-		error = -EFAULT;
-	if (!error && override_release(name->release, sizeof(name->release)))
-		error = -EFAULT;
-	return error ? -EFAULT : 0;
+	if (override_architecture(name))
+		return -EFAULT;
+	if (override_release(name->release, sizeof(name->release)))
+		return -EFAULT;
+	return 0;
 }
 #endif
 
@@ -1210,17 +1312,18 @@ SYSCALL_DEFINE2(sethostname, char __user *, name, int, len)
 
 	if (len < 0 || len > __NEW_UTS_LEN)
 		return -EINVAL;
-	down_write(&uts_sem);
 	errno = -EFAULT;
 	if (!copy_from_user(tmp, name, len)) {
-		struct new_utsname *u = utsname();
+		struct new_utsname *u;
 
+		down_write(&uts_sem);
+		u = utsname();
 		memcpy(u->nodename, tmp, len);
 		memset(u->nodename + len, 0, sizeof(u->nodename) - len);
 		errno = 0;
 		uts_proc_notify(UTS_PROC_HOSTNAME);
+		up_write(&uts_sem);
 	}
-	up_write(&uts_sem);
 	return errno;
 }
 
@@ -1228,8 +1331,9 @@ SYSCALL_DEFINE2(sethostname, char __user *, name, int, len)
 
 SYSCALL_DEFINE2(gethostname, char __user *, name, int, len)
 {
-	int i, errno;
+	int i;
 	struct new_utsname *u;
+	char tmp[__NEW_UTS_LEN + 1];
 
 	if (len < 0)
 		return -EINVAL;
@@ -1238,11 +1342,11 @@ SYSCALL_DEFINE2(gethostname, char __user *, name, int, len)
 	i = 1 + strlen(u->nodename);
 	if (i > len)
 		i = len;
-	errno = 0;
-	if (copy_to_user(name, u->nodename, i))
-		errno = -EFAULT;
+	memcpy(tmp, u->nodename, i);
 	up_read(&uts_sem);
-	return errno;
+	if (copy_to_user(name, tmp, i))
+		return -EFAULT;
+	return 0;
 }
 
 #endif
@@ -1261,17 +1365,18 @@ SYSCALL_DEFINE2(setdomainname, char __user *, name, int, len)
 	if (len < 0 || len > __NEW_UTS_LEN)
 		return -EINVAL;
 
-	down_write(&uts_sem);
 	errno = -EFAULT;
 	if (!copy_from_user(tmp, name, len)) {
-		struct new_utsname *u = utsname();
+		struct new_utsname *u;
 
+		down_write(&uts_sem);
+		u = utsname();
 		memcpy(u->domainname, tmp, len);
 		memset(u->domainname + len, 0, sizeof(u->domainname) - len);
 		errno = 0;
 		uts_proc_notify(UTS_PROC_DOMAINNAME);
+		up_write(&uts_sem);
 	}
-	up_write(&uts_sem);
 	return errno;
 }
 

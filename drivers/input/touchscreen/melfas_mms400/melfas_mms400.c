@@ -11,6 +11,14 @@
 struct wake_lock mms_wake_lock;
 #endif
 
+#ifdef CONFIG_TRUSTONIC_TRUSTED_UI
+#include <linux/trustedui.h>
+#endif
+
+#ifdef CONFIG_TRUSTONIC_TRUSTED_UI
+extern int tui_force_close(uint32_t arg);
+struct mms_ts_info *tui_tsp_info;
+#endif
 /**
  * Reboot chip
  *
@@ -42,7 +50,6 @@ int mms_i2c_read(struct mms_ts_info *info, char *write_buf, unsigned int write_l
 {
 	int retry = I2C_RETRY_COUNT;
 	int res;
-
 	struct i2c_msg msg[] = {
 		{
 			.addr = info->client->addr,
@@ -56,22 +63,31 @@ int mms_i2c_read(struct mms_ts_info *info, char *write_buf, unsigned int write_l
 			.len = read_len,
 		},
 	};
+#ifdef CONFIG_TRUSTONIC_TRUSTED_UI
+	if (TRUSTEDUI_MODE_INPUT_SECURED & trustedui_get_current_mode()) {
+		dev_err(&info->client->dev, 
+			"%s TSP no accessible from Linux, TUI is enabled!\n", __func__);
+		return -EIO;
+	}
+#endif
 
 	while (retry--) {
 		res = i2c_transfer(info->client->adapter, msg, ARRAY_SIZE(msg));
-
 		if (res == ARRAY_SIZE(msg)) {
 			goto DONE;
 		} else if (res < 0) {
 			tsp_debug_err(true, &info->client->dev,
 				"%s [ERROR] i2c_transfer - errno[%d]\n", __func__, res);
+			info->comm_err_count++;
 		} else if (res != ARRAY_SIZE(msg)) {
 			tsp_debug_err(true, &info->client->dev,
 				"%s [ERROR] i2c_transfer - result[%d]\n",
 				__func__, res);
+			info->comm_err_count++;
 		}else {
 			tsp_debug_err(true, &info->client->dev,
 				"%s [ERROR] unknown error [%d]\n", __func__, res);
+			info->comm_err_count++;
 		}
 	}
 
@@ -96,6 +112,14 @@ int mms_i2c_read_next(struct mms_ts_info *info, char *read_buf, int start_idx,
 	int res;
 	u8 rbuf[read_len];
 
+#ifdef CONFIG_TRUSTONIC_TRUSTED_UI
+	if (TRUSTEDUI_MODE_INPUT_SECURED & trustedui_get_current_mode()) {
+		dev_err(&info->client->dev, 
+			"%s TSP no accessible from Linux, TUI is enabled!\n", __func__);
+		return -EIO;
+	}
+#endif
+
 	while (retry--) {
 		res = i2c_master_recv(info->client, rbuf, read_len);
 
@@ -104,13 +128,16 @@ int mms_i2c_read_next(struct mms_ts_info *info, char *read_buf, int start_idx,
 		} else if (res < 0) {
 			tsp_debug_err(true, &info->client->dev,
 				"%s [ERROR] i2c_master_recv - errno [%d]\n", __func__, res);
+			info->comm_err_count++;
 		} else if (res != read_len) {
 			tsp_debug_err(true, &info->client->dev,
 				"%s [ERROR] length mismatch - read[%d] result[%d]\n",
 				__func__, read_len, res);
+			info->comm_err_count++;
 		} else {
 			tsp_debug_err(true, &info->client->dev,
 				"%s [ERROR] unknown error [%d]\n", __func__, res);
+			info->comm_err_count++;
 		}
 	}
 
@@ -134,6 +161,14 @@ int mms_i2c_write(struct mms_ts_info *info, char *write_buf, unsigned int write_
 	int retry = I2C_RETRY_COUNT;
 	int res;
 
+#ifdef CONFIG_TRUSTONIC_TRUSTED_UI
+	if (TRUSTEDUI_MODE_INPUT_SECURED & trustedui_get_current_mode()) {
+		dev_err(&info->client->dev, 
+			"%s TSP no accessible from Linux, TUI is enabled!\n", __func__);
+		return -EIO;
+	}
+#endif
+
 	while (retry--) {
 		res = i2c_master_send(info->client, write_buf, write_len);
 
@@ -142,13 +177,16 @@ int mms_i2c_write(struct mms_ts_info *info, char *write_buf, unsigned int write_
 		} else if (res < 0) {
 			tsp_debug_err(true, &info->client->dev,
 				"%s [ERROR] i2c_master_send - errno [%d]\n", __func__, res);
+			info->comm_err_count++;
 		} else if (res != write_len) {
 			tsp_debug_err(true, &info->client->dev,
 				"%s [ERROR] length mismatch - write[%d] result[%d]\n",
 				__func__, write_len, res);
+			info->comm_err_count++;
 		} else {
 			tsp_debug_err(true, &info->client->dev,
 				"%s [ERROR] unknown error [%d]\n", __func__, res);
+			info->comm_err_count++;
 		}
 	}
 
@@ -248,12 +286,44 @@ static int mms_input_open(struct input_dev *dev)
 {
 	struct mms_ts_info *info = input_get_drvdata(dev);
 
-	if (!info->init)
-		mms_enable(info);
-#if defined(MELFAS_GHOST_TOUCH_AUTO_DETECT)
-	info->data_first_update = true;
-	mod_timer(&info->ghost_timer, get_jiffies_64() + GHOST_TIMER_INTERVAL);
+	if (!info->init) {
+		input_info(true, &info->client->dev, "%s %s\n",
+				__func__, info->lowpower_mode ? "exit LPM mode" : "");
+
+#ifdef CONFIG_TRUSTONIC_TRUSTED_UI
+		if(TRUSTEDUI_MODE_TUI_SESSION & trustedui_get_current_mode()){
+			dev_err(&info->client->dev, "%s TUI cancel event call!\n", __func__);
+			msleep(100);
+			tui_force_close(1);
+			msleep(200);
+			if(TRUSTEDUI_MODE_TUI_SESSION & trustedui_get_current_mode()){
+				dev_err(&info->client->dev, "%s TUI flag force clear!\n",	__func__);
+				trustedui_clear_mask(TRUSTEDUI_MODE_VIDEO_SECURED|TRUSTEDUI_MODE_INPUT_SECURED);
+				trustedui_set_mode(TRUSTEDUI_MODE_OFF);
+			}
+		}
 #endif
+		if (info->ic_status >= LPM_RESUME) {
+			if (device_may_wakeup(&info->client->dev))
+				disable_irq_wake(info->client->irq);
+
+			disable_irq(info->client->irq);
+			mms_reboot(info);
+			enable_irq(info->client->irq);
+#ifdef CONFIG_VBUS_NOTIFIER
+			if (info->ta_stsatus)
+				mms_charger_attached(info, true);
+#endif
+		} else {
+			mms_enable(info);
+		}
+		info->ic_status = PWR_ON;
+#if defined(MELFAS_GHOST_TOUCH_AUTO_DETECT)
+		info->data_first_update = true;
+		mod_timer(&info->ghost_timer, get_jiffies_64() + GHOST_TIMER_INTERVAL);
+#endif
+	}
+
 	return 0;
 }
 
@@ -263,11 +333,40 @@ static int mms_input_open(struct input_dev *dev)
 static void mms_input_close(struct input_dev *dev)
 {
 	struct mms_ts_info *info = input_get_drvdata(dev);
+
+	input_info(true, &info->client->dev, "%s %s\n",
+			__func__, info->lowpower_mode ? "enter LPM mode" : "");
+
 #if defined(MELFAS_GHOST_TOUCH_AUTO_DETECT)
 	del_timer(&info->ghost_timer);
 	cancel_delayed_work_sync(&info->ghost_check);
 #endif
-	mms_disable(info);
+
+#ifdef CONFIG_TRUSTONIC_TRUSTED_UI
+	if(TRUSTEDUI_MODE_TUI_SESSION & trustedui_get_current_mode()){	
+		dev_err(&info->client->dev, "%s TUI cancel event call!\n", __func__);
+		msleep(100);
+		tui_force_close(1);
+		msleep(200);
+		if(TRUSTEDUI_MODE_TUI_SESSION & trustedui_get_current_mode()){	
+			dev_err(&info->client->dev, "%s TUI flag force clear!\n",	__func__);
+			trustedui_clear_mask(TRUSTEDUI_MODE_VIDEO_SECURED|TRUSTEDUI_MODE_INPUT_SECURED);
+			trustedui_set_mode(TRUSTEDUI_MODE_OFF);
+		}
+	}
+#endif
+
+	if (info->lowpower_mode) {
+		mms_lowpower_mode(info, 1);
+		if (device_may_wakeup(&info->client->dev))
+			enable_irq_wake(info->client->irq);
+		mms_clear_input(info);
+		info->ic_status = LPM_RESUME;
+	} else {
+		mms_disable(info);
+		info->ic_status = PWR_OFF;
+	}
+
 	return;
 }
 #endif
@@ -577,7 +676,7 @@ ERROR:
  */
 static int mms_alert_handler_esd(struct mms_ts_info *info, u8 *rbuf)
 {
-	u8 frame_cnt = rbuf[2];
+	u8 frame_cnt = rbuf[1];
 
 	tsp_debug_info(true, &info->client->dev, "%s [START] - frame_cnt[%d]\n",
 		__func__, frame_cnt);
@@ -610,6 +709,40 @@ static int mms_alert_handler_esd(struct mms_ts_info *info, u8 *rbuf)
 
 	tsp_debug_info(true, &info->client->dev, "%s [DONE]\n", __func__);
 	return 0;
+}
+
+/*
+ * Alert event handler - SRAM failure
+ */
+static int mms_alert_handler_sram(struct mms_ts_info *info, u8 *data)
+{
+	int i;
+
+	tsp_debug_dbg(true, &info->client->dev, "%s [START]\n", __func__);
+
+	info->sram_addr_num = (unsigned int) (data[0] | (data[1] << 8));
+	tsp_debug_info(true, &info->client->dev, "%s - sram_addr_num [%d]\n", __func__, info->sram_addr_num);
+
+	if (info->sram_addr_num > 8) {
+		tsp_debug_err(true, &info->client->dev, "%s [ERROR] sram_addr_num [%d]\n", __func__, info->sram_addr_num);
+		goto error;
+	}
+
+	for (i = 0; i < info->sram_addr_num; i++) {
+		info->sram_addr[i] = data[2 + 4 * i] | (data[2 + 4 * i + 1] << 8) | (data[2 + 4 * i + 2] << 16) | (data[2 + 4 * i + 3] << 24);
+		tsp_debug_info(true, &info->client->dev, "%s - sram_addr #%d [0x%08X]\n", __func__, i, info->sram_addr[i]);
+	}
+	for (i = info->sram_addr_num; i < 8; i++) {
+		info->sram_addr[i] = 0;
+		tsp_debug_info(true, &info->client->dev, "%s - sram_addr #%d [0x%08X]\n", __func__, i, info->sram_addr[i]);
+	}
+
+	tsp_debug_dbg(true, &info->client->dev, "%s [DONE]\n", __func__);
+	return 0;
+
+error:
+	tsp_debug_err(true, &info->client->dev, "%s [ERROR]\n", __func__);
+	return 1;
 }
 
 #ifdef CONFIG_VBUS_NOTIFIER
@@ -646,16 +779,72 @@ static irqreturn_t mms_interrupt(int irq, void *dev_id)
 	u8 wbuf[8];
 	u8 rbuf[256];
 	unsigned int size = 0;
-	int event_size = info->event_size;
+//	int event_size = info->event_size;
 	u8 category = 0;
 	u8 alert_type = 0;
 
+	if (info->lowpower_mode){
+		pm_wakeup_event(info->input_dev->dev.parent, 1000);
+	}
+
 	tsp_debug_dbg(false, &client->dev, "%s [START]\n", __func__);
 
-	//Read first packet
+	// AOT function
+	if(info->lowpower_mode && info->ic_status >= LPM_RESUME)
+	{
+		wbuf[0] = MIP_R0_AOT;
+		wbuf[1] = MIP_R0_AOT_EVENT;
+		if (mms_i2c_read(info, wbuf, 2, rbuf, 1)) {
+			input_err(true, &client->dev, "%s [ERROR] Read AOT event info\n", __func__);
+			goto ERROR;
+		}
+
+		input_info(true, &info->client->dev, "%s start, event:%x! gpio:%d\n", __func__, rbuf[0], gpio_get_value(info->dtdata->gpio_intr));
+
+		alert_type = rbuf[0] >> 1;
+
+		if(alert_type & MMS_LPM_FLAG_SPAY) {
+			info->scrub_id = SPONGE_EVENT_TYPE_SPAY;
+			info->scrub_x = 0;
+			info->scrub_y = 0;
+
+			input_info(true, &client->dev, "%s: [Gesture] Spay, flag%x\n",
+						__func__, info->lowpower_flag);
+		} else if(alert_type & MMS_LPM_FLAG_AOD) {
+			info->scrub_id = SPONGE_EVENT_TYPE_AOD_DOUBLETAB;
+
+			wbuf[0] = MIP_R0_AOT;
+			wbuf[1] = MIP_R0_AOT_POSITION_X;
+			if (mms_i2c_read(info, wbuf, 2, rbuf, 4)) {
+				input_err(true, &client->dev, "%s [ERROR] Read AOT event info\n", __func__);
+				goto ERROR;
+			}
+
+			input_info(true, &client->dev, "%s - double tap event(%x, %x, %x, %x)", __func__, rbuf[0], rbuf[1],rbuf[2],rbuf[3]);
+
+			info->scrub_x = ((rbuf[0] & 0xFF) << 0) | ((rbuf[1] & 0xFF) << 8);
+			info->scrub_y = ((rbuf[2] & 0xFF) << 0) | ((rbuf[3] & 0xFF) << 8);
+#ifdef CONFIG_SAMSUNG_PRODUCT_SHIP
+			input_info(true, &client->dev, "%s: aod: %d\n",	__func__, info->scrub_id);
+#else
+			input_info(true, &client->dev, "%s: aod: %d, %d, %d\n", __func__, info->scrub_id, info->scrub_x, info->scrub_y);
+#endif
+
+		} else {
+			input_err(true, &client->dev, "%s [ERROR] Read a wrong aot action %x\n", __func__, alert_type);
+			return IRQ_HANDLED;
+		}
+		input_report_key(info->input_dev, KEY_BLACK_UI_GESTURE, 1);
+		input_sync(info->input_dev);
+		input_report_key(info->input_dev, KEY_BLACK_UI_GESTURE, 0);
+		input_sync(info->input_dev);
+		return IRQ_HANDLED;
+	}
+
+	//Read packet info
 	wbuf[0] = MIP_R0_EVENT;
 	wbuf[1] = MIP_R1_EVENT_PACKET_INFO;
-	if (mms_i2c_read(info, wbuf, 2, rbuf, (1 + event_size))) {
+	if (mms_i2c_read(info, wbuf, 2, rbuf, 1)) {
 		tsp_debug_err(true, &client->dev, "%s [ERROR] Read packet info\n", __func__);
 		goto ERROR;
 	}
@@ -664,30 +853,51 @@ static irqreturn_t mms_interrupt(int irq, void *dev_id)
 
 	//Check event
 	size = (rbuf[0] & 0x7F);
+	if (size <= 0) {	
+		tsp_debug_err(true, &client->dev, "%s [ERROR] packet size = 0\n", __func__);
+		goto ERROR;
+	}
+
+	category = ((rbuf[0] >> 7) & 0x1);
 
 	tsp_debug_dbg(false, &client->dev, "%s - packet size [%d]\n", __func__, size);
 
-	category = ((rbuf[0] >> 7) & 0x1);
+	//Read packet data
+	wbuf[0] = MIP_R0_EVENT;
+	wbuf[1] = MIP_R1_EVENT_PACKET_DATA;
+	if (mms_i2c_read(info, wbuf, 2, rbuf, size)) {
+		tsp_debug_err(true, &client->dev, "%s [ERROR] Read packet data\n", __func__);
+		goto ERROR;
+	}
+
 	if (category == 0) {
 		//Touch event
-		if (size > event_size) {
-			//Read next packet
-			if (mms_i2c_read_next(info, rbuf, (1 + event_size), (size - event_size))) {
-				tsp_debug_err(true, &client->dev, "%s [ERROR] Read next packet\n", __func__);
-				goto ERROR;
-			}
-		}
 		info->esd_cnt = 0;
 		mms_input_event_handler(info, size, rbuf);
 	} else {
 		//Alert event
-		alert_type = rbuf[1];
+		alert_type = rbuf[0];
 
 		tsp_debug_dbg(true, &client->dev, "%s - alert type [%d]\n", __func__, alert_type);
 
 		if (alert_type == MIP_ALERT_ESD) {
 			//ESD detection
 			if (mms_alert_handler_esd(info, rbuf)) {
+				goto ERROR;
+			}
+		} else if (alert_type == MIP_ALERT_WAKEUP) {
+			if (info->lowpower_flag & MMS_LPM_FLAG_SPAY) {
+				info->scrub_id = 0x04;
+				input_report_key(info->input_dev, KEY_BLACK_UI_GESTURE, 1);
+				input_sync(info->input_dev);
+				input_report_key(info->input_dev, KEY_BLACK_UI_GESTURE, 0);
+				input_sync(info->input_dev);
+				input_info(true, &client->dev, "%s: [Gesture] Spay, flag%x\n",
+						__func__, info->lowpower_flag);
+			}
+		} else if (alert_type == MIP_ALERT_SRAM_FAILURE) {
+			//SRAM failure
+			if (mms_alert_handler_sram(info, &rbuf[1])) {
 				goto ERROR;
 			}
 		} else {
@@ -1108,6 +1318,10 @@ static int mms_probe(struct i2c_client *client, const struct i2c_device_id *id)
 		goto err_platform_data;
 	}
 
+#ifdef CONFIG_TRUSTONIC_TRUSTED_UI
+	tui_tsp_info = info;
+#endif
+
 	snprintf(info->phys, sizeof(info->phys), "%s/input0", dev_name(&client->dev));
 	input_dev->name = "sec_touchscreen";
 	input_dev->phys = info->phys;
@@ -1136,6 +1350,7 @@ static int mms_probe(struct i2c_client *client, const struct i2c_device_id *id)
 	ret = mms_fw_update_from_kernel(info, false);
 	if(ret){
 		tsp_debug_err(true, &client->dev, "%s [ERROR] mms_fw_update_from_kernel\n", __func__);
+		goto err_fw_update;
 	}
 #endif
 
@@ -1166,6 +1381,12 @@ static int mms_probe(struct i2c_client *client, const struct i2c_device_id *id)
 #if MMS_USE_NAP_MODE
 	//Wake lock for nap mode
 	wake_lock_init(&mms_wake_lock, WAKE_LOCK_SUSPEND, "mms_wake_lock");
+#endif
+
+#ifdef CONFIG_TRUSTONIC_TRUSTED_UI
+	trustedui_set_tsp_irq(info->irq);
+	dev_err(&client->dev, "%s[%d] called!\n",
+		__func__, info->irq);
 #endif
 
 	mms_enable(info);
@@ -1221,7 +1442,9 @@ static int mms_probe(struct i2c_client *client, const struct i2c_device_id *id)
 	mod_timer(&info->ghost_timer, get_jiffies_64() + GHOST_TIMER_INTERVAL);
 	info->data_first_update = true;
 #endif
+	device_init_wakeup(&client->dev, true);
 	info->init = false;
+	info->ic_status = PWR_ON;
 	tsp_debug_info(true, &client->dev,
 		"MELFAS " CHIP_NAME " Touchscreen is initialized successfully\n");
 	return 0;
@@ -1246,6 +1469,8 @@ err_test_dev_create:
 	mms_disable(info);
 	free_irq(info->irq, info);
 err_request_irq:
+err_fw_update:
+	mms_power_control(info, 0);
 	input_unregister_device(info->input_dev);
 	info->input_dev = NULL;
 err_input_register_device:
@@ -1262,6 +1487,13 @@ ERROR:
 	pr_err("MELFAS " CHIP_NAME " Touchscreen initialization failed.\n");
 	return ret;
 }
+
+#ifdef CONFIG_TRUSTONIC_TRUSTED_UI
+void trustedui_mode_on(void){
+	dev_err(&tui_tsp_info->client->dev, "%s, release all finger..\n",	__func__);
+	mms_clear_input(tui_tsp_info);
+}
+#endif
 
 /**
  * Remove driver
@@ -1298,6 +1530,41 @@ static int mms_remove(struct i2c_client *client)
 	return 0;
 }
 
+static void mms_shutdown(struct i2c_client *client)
+{
+	struct mms_ts_info *info = i2c_get_clientdata(client);
+	input_err(true, &info->client->dev,"%s \n", __func__);
+
+	mms_disable(info);
+}
+
+#ifdef CONFIG_PM
+static int mms_suspend(struct device *dev)
+{
+	struct mms_ts_info *info = dev_get_drvdata(dev);
+
+	if (info->ic_status == LPM_RESUME) {
+		info->ic_status = LPM_SUSPEND;
+	}
+	return 0;
+}
+
+static int mms_resume(struct device *dev)
+{
+	struct mms_ts_info *info = dev_get_drvdata(dev);
+
+	if (info->ic_status == LPM_SUSPEND) {
+		info->ic_status = LPM_RESUME;
+	}
+	return 0;
+}
+
+static const struct dev_pm_ops mms_dev_pm_ops = {
+	.suspend = mms_suspend,
+	.resume = mms_resume,
+};
+#endif
+
 #if MMS_USE_DEVICETREE
 /**
  * Device tree match table
@@ -1324,11 +1591,15 @@ static struct i2c_driver mms_driver = {
 	.id_table	= mms_id,
 	.probe = mms_probe,
 	.remove = mms_remove,
+	.shutdown = mms_shutdown,
 	.driver = {
 		.name = MMS_DEVICE_NAME,
 		.owner = THIS_MODULE,
 #if MMS_USE_DEVICETREE
 		.of_match_table = mms_match_table,
+#endif
+#ifdef CONFIG_PM
+		.pm = &mms_dev_pm_ops,
 #endif
 	},
 };

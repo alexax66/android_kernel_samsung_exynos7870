@@ -68,7 +68,7 @@
 	};
 
 	serial_1: uart@13800000 {
-		status = "okay";
+		status = "disabled";
 	};
 
 	serial_2: uart@13820000 {
@@ -207,8 +207,8 @@
 		samsung,dw-mshc-ddr200-timing = <1 0 4 0>;
 		samsung,dw-mshc-ddr200-ulp-timing = <3 0 3 0>;
 
-		num-ref-clks = <10>;
-		ciu_clkin = <25 50 50 100 200 100 50 200 200 200>;
+		num-ref-clks = <12>;
+		ciu_clkin = <25 50 50 25 50 100 200 50 50 200 200 200>;
 
 		/* Swapping clock drive strength */
 		clk-drive-number = <6>;
@@ -260,8 +260,9 @@
 		clk_addr = "13750000.pinctrl";
 		clk_val = <0x2>;
 		clk_str_num = <4>;
-		num-ref-clks = <8>;
-		ciu_clkin = <25 50 50 100 200 100 200 400>;
+		num-ref-clks = <9>;
+		ciu_clkin = <25 50 50 25 50 100 200 50 50>;
+
 		pinctrl-names = "default";
 		pinctrl-0 = <&sd1_clk &sd1_cmd &sd1_bus1 &sd1_bus4>;
 		slot@0 {
@@ -286,6 +287,7 @@
 		use-fine-tuning;
 		card-init-hwacg-ctrl;
 		only_once_tune;
+		skip-init-mmc-scan;
 		samsung,voltage-int-extra = <0x7>;
 		ignore-phase = <(1 << 7)>;
 		fifo-depth = <0x40>;
@@ -300,8 +302,8 @@
 		samsung,dw-mshc-sdr50-timing = <3 0 4 2>;
 		samsung,dw-mshc-sdr104-timing = <3 0 3 0>;
 
-		num-ref-clks = <8>;
-		ciu_clkin = <25 50 50 100 200 100 200 400>;
+		num-ref-clks = <9>;
+		ciu_clkin = <25 50 50 25 50 100 200 50 50>;
 
 		/* Swapping clock drive strength */
 		clk-drive-number = <4>;
@@ -1379,29 +1381,36 @@
 
 	dsim_0: dsim@14800000 {
 		lcd_info = <&hx8279d>;
-		decon_board = <&decon_board_list>;
-		/* lcd reset, power */
-		/* gpios = <&gpd3 4 0x1>, <&gpd1 5 0x1>; */
+		decon_board = <&decon_board>;
 		status = "okay";
 	};
 
-	decon_board_list: decon_board_list {
+	decon_board: decon_board {
+		gpio_buck_en = <&gpd3 4 0x1>;
+		gpio_lcd_rst = <&gpd4 1 0x1>;
+
 		dsim_set_panel_power_enable {
-			type = "regulator,enable", "delay,usleep", "gpio,high", "delay,usleep";
-			gpios = <&gpd3 4 0x1>;
-			regulator = "LCD_1P8";
-			delay = <10000 11000>, <15000 16000>;
+			type =
+			"regulator,enable",	"LCD_1P8",
+			"delay,usleep",	"10000 11000",
+			"gpio,high",	"gpio_buck_en",
+			"delay,usleep",	"15000 16000";
 		};
 		dsim_set_panel_power_disable {
-			type = "gpio,low", "gpio,low", "delay,usleep", "regulator,disable";
-			gpios = <&gpd4 1 0x1>, <&gpd3 4 0x1>;
-			regulator = "LCD_1P8";
-			delay = <10000 11000>;
+			type =
+			"gpio,low",	"gpio_lcd_rst",
+			"gpio,low",	"gpio_buck_en",
+			"delay,usleep",	"10000 11000",
+			"regulator,disable",	"LCD_1P8";
 		};
 		dsim_reset_panel {
-			type = "gpio,high", "delay,usleep", "gpio,low", "delay,usleep", "gpio,high", "delay,usleep";
-			gpios = <&gpd4 1 0x1>, <&gpd4 1 0x1>, <&gpd4 1 0x1>;
-			delay = <10000 11000>, <10000 11000>, <10000 11000>;
+			type =
+			"gpio,high",	"gpio_lcd_rst",
+			"delay,usleep",	"10000 11000",
+			"gpio,low",	"gpio_lcd_rst",
+			"delay,usleep",	"10000 11000",
+			"gpio,high",	"gpio_lcd_rst",
+			"delay,usleep",	"10000 11000";
 		};
 	};
 
@@ -1417,6 +1426,8 @@
 		timing,pms = <3 226 1>;
 		timing,dsi-escape-clk = <16>;
 		clklane_onoff = <1>;
+		duty_max = <199>;
+		duty_outdoor = <255>;
 	};
 
 	sec_thermistor@0 {
@@ -1438,7 +1449,7 @@
 		compatible = "samsung,argos";
 		#address-cells = <1>;
 		boot_device@1 {
-			net_boost,label="WIFI";
+			net_boost,label="WIFI TX";
 			net_boost,node="wlan0";
 			net_boost,table_size = <3>;
 			net_boost,table= <
@@ -1490,6 +1501,14 @@
                         net_boost,sysnode="/sys/class/mmc_host/mmc0/trans_count";
                         net_boost,table_size = <1>;
                         net_boost,table= <128 0 0 546000 0 0 400000 0 0>;
+                };
+		boot_device@7 {
+                        net_boost,label="WIFI RX";
+                        net_boost,node="wlan0";
+                        net_boost,table_size = <1>;
+                        net_boost,table= <
+                                100 1352000 0  1352000 0 0 0 0 0
+                                >;
                 };
         };
 

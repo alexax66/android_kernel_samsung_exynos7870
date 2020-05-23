@@ -17,7 +17,7 @@ hostprogs-$(BUILD_C_RECORDMCOUNT) += recordmcount
 hostprogs-$(CONFIG_BUILDTIME_EXTABLE_SORT) += sortextable
 hostprogs-$(CONFIG_ASN1)	 += asn1_compiler
 
-HOSTCFLAGS_sortextable.o = -I$(srctree)/tools/include $(call cc-disable-warning, unused-function)
+HOSTCFLAGS_sortextable.o = -I$(srctree)/tools/include
 HOSTCFLAGS_asn1_compiler.o = -I$(srctree)/include
 
 always		:= $(hostprogs-y) $(hostprogs-m)
@@ -36,6 +36,8 @@ subdir-$(CONFIG_MODVERSIONS) += genksyms
 subdir-y                     += mod
 subdir-$(CONFIG_SECURITY_SELINUX) += selinux
 subdir-$(CONFIG_DTC)         += dtc
+subdir-$(CONFIG_GDB_SCRIPTS) += gdb
+subdir-$(CONFIG_EXYNOS_DTBTOOL) += dtbtool_exynos
 
 # Let clean descend into subdirs
 subdir-	+= basic kconfig package

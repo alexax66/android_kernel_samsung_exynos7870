@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2014 TRUSTONIC LIMITED
+ * Copyright (c) 2013-2015 TRUSTONIC LIMITED
  * All Rights Reserved.
  *
  * This program is free software; you can redistribute it and/or
@@ -22,6 +22,7 @@
 #include <linux/completion.h>
 #include <linux/slab.h>
 #include <linux/uaccess.h>
+#include <linux/switch.h>
 
 #include "tui_ioctl.h"
 #include "tlcTui.h"
@@ -38,6 +39,23 @@
 
 /* Static variables */
 static struct cdev tui_cdev;
+
+struct switch_dev tui_switch;
+
+int tui_force_close(uint32_t arg)
+{
+	int ret = 0;
+
+	pr_info("Force TUI_IO_NOTIFY %d\n", arg);
+
+	if (tlc_notify_event(arg))
+		ret = 0;
+	else
+		ret = -EFAULT;
+
+	return ret;
+}
+EXPORT_SYMBOL(tui_force_close);
 
 static long tui_ioctl(struct file *f, unsigned int cmd, unsigned long arg)
 {
@@ -65,8 +83,11 @@ static long tui_ioctl(struct file *f, unsigned int cmd, unsigned long arg)
 		pr_info("TUI_IO_WAITCMD\n");
 
 		ret = tlc_wait_cmd(&cmd_id);
-		if (ret)
+		if (ret) {
+			pr_debug("ERROR %s:%d tlc_wait_cmd returned (0x%08X)\n",
+				 __func__, __LINE__, ret);
 			return ret;
+		}
 
 		/* Write command id to user */
 		pr_debug("IOCTL: sending command %d to user.\n", cmd_id);
@@ -75,11 +96,6 @@ static long tui_ioctl(struct file *f, unsigned int cmd, unsigned long arg)
 			ret = -EFAULT;
 		else
 			ret = 0;
-
-		/* Reset the value of the command, to ensure that commands sent
-		 * due to interrupted wait_for_completion are TLC_TUI_CMD_NONE.
-		 */
-		reset_global_command_id();
 
 		break;
 	}
@@ -110,12 +126,29 @@ static long tui_ioctl(struct file *f, unsigned int cmd, unsigned long arg)
 	return ret;
 }
 
+atomic_t fileopened;
+static int tui_open(struct inode *inode, struct file *file)
+{
+	printk(KERN_INFO "TUI file opened");
+	atomic_inc(&fileopened);
+	return 0;
+}
+
+static int tui_release(struct inode *inode, struct file *file)
+{
+	printk(KERN_INFO "TUI file closed");
+	atomic_dec(&fileopened);
+	return 0;
+}
+
 static const struct file_operations tui_fops = {
 	.owner = THIS_MODULE,
 	.unlocked_ioctl = tui_ioctl,
 #ifdef CONFIG_COMPAT
 	.compat_ioctl = tui_ioctl,
 #endif
+	.open = tui_open,
+	.release = tui_release,
 };
 
 /*--------------------------------------------------------------------------- */
@@ -128,6 +161,8 @@ static int __init tlc_tui_init(void)
 	dev_t devno;
 	int err;
 	static struct class *tui_class;
+
+	atomic_set(&fileopened, 0);
 
 	err = alloc_chrdev_region(&devno, 0, 1, TUI_DEV_NAME);
 	if (err) {
@@ -147,10 +182,27 @@ static int __init tlc_tui_init(void)
 	}
 
 	tui_class = class_create(THIS_MODULE, "tui_cls");
+	if (IS_ERR(tui_class)) {
+		pr_debug(KERN_ERR "Failed to create tui class.\n");
+		unregister_chrdev_region(devno, 1);
+		cdev_del(&tui_cdev);
+		return -1;
+	}
+
 	device_create(tui_class, NULL, devno, NULL, TUI_DEV_NAME);
 
-	if (!hal_tui_init())
-		return -EPERM;
+	if (!hal_tui_init()) {
+		pr_debug(KERN_ERR "Failed to initialize tui hal\n");
+		unregister_chrdev_region(devno, 1);
+		cdev_del(&tui_cdev);
+		return -1;
+	}
+
+	/* register the switch device for tui */
+	tui_switch.name = "tui";
+	err = switch_dev_register(&tui_switch);
+	if (err)
+		pr_debug(KERN_ERR "Failed to register tui_switch.\n");
 
 	return 0;
 }
@@ -159,6 +211,7 @@ static void __exit tlc_tui_exit(void)
 {
 	pr_info("Unloading t-base-tui module.\n");
 
+	switch_dev_unregister(&tui_switch);
 	unregister_chrdev_region(tui_cdev.dev, 1);
 	cdev_del(&tui_cdev);
 
@@ -168,6 +221,5 @@ static void __exit tlc_tui_exit(void)
 module_init(tlc_tui_init);
 module_exit(tlc_tui_exit);
 
-MODULE_AUTHOR("Trustonic Limited");
 MODULE_LICENSE("GPL v2");
 MODULE_DESCRIPTION("<t-base TUI");

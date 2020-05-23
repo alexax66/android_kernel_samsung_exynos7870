@@ -49,7 +49,7 @@ static void decon_oneshot_underrun_log(struct decon_device *decon)
 		return;
 
 	if (decon->underrun_stat.underrun_cnt > DECON_UNDERRUN_THRESHOLD) {
-		pr_err("underrun (level %d), bw(%llu), mif(%ld), chmap(0x%x), win(0x%lx), aclk(%ld)\n",
+		decon_err("underrun (level %d), bw(%llu), mif(%ld), chmap(0x%x), win(0x%lx), aclk(%ld)\n",
 			decon->underrun_stat.fifo_level,
 			decon->underrun_stat.prev_bw,
 			decon->underrun_stat.mif_pll / MHZ,
@@ -118,11 +118,13 @@ irqreturn_t decon_int_irq_handler(int irq, void *dev_data)
 					~0, VIDINTCON1_INT_FIFO);
 		/* TODO: underrun function */
 		/* s3c_fb_log_fifo_underflow_locked(decon, timestamp); */
+		DISP_SS_DUMP(DISP_DUMP_DECON_UNDERRUN);
 	}
 	if (irq_sts_reg & VIDINTCON1_INT_I80) {
 		DISP_SS_EVENT_LOG(DISP_EVT_DECON_FRAMEDONE, &decon->sd, ktime_set(0, 0));
 		decon_write_mask(DECON_INT, VIDINTCON1, ~0, VIDINTCON1_INT_I80);
 		decon->frame_done_cnt_cur++;
+		decon_lpd_trig_reset(decon);
 		wake_up_interruptible_all(&decon->wait_frmdone);
 	}
 
@@ -339,7 +341,7 @@ static u32 wincon(u32 bits_per_pixel, u32 transp_length)
 		}
 		break;
 	default:
-		pr_err("%d bpp doesn't support\n", bits_per_pixel);
+		decon_err("%d bpp doesn't support\n", bits_per_pixel);
 		break;
 	}
 
@@ -559,6 +561,10 @@ int decon_pan_display(struct fb_var_screeninfo *var, struct fb_info *info)
 
 	decon_lpd_block_exit(decon);
 
+#if defined(CONFIG_EXYNOS_SUPPORT_FB_HANDOVER)
+	decon_fb_handover_color_map(decon);
+#endif
+
 	/* Offset in bytes to the start of the displayed area */
 	start_boff = var->yoffset * info->fix.line_length;
 	/* X offset depends on the current bpp */
@@ -677,6 +683,7 @@ static void decon_parse_lcd_info(struct decon_device *decon)
 		decon->windows[i]->win_mode.videomode.yres = lcd_info->yres;
 		decon->windows[i]->win_mode.width = lcd_info->width;
 		decon->windows[i]->win_mode.height = lcd_info->height;
+		decon->windows[i]->win_mode.videomode.refresh = lcd_info->fps;
 	}
 }
 

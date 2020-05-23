@@ -793,6 +793,22 @@ static int sc_v4l2_s_fmt_mplane(struct file *file, void *fh,
 	for (i = 0; i < frame->sc_fmt->num_planes; i++)
 		frame->bytesused[i] = pixm->plane_fmt[i].sizeimage;
 
+	if (V4L2_TYPE_IS_OUTPUT(f->type) && ctx->bl_op &&
+		ctx->sc_dev->variant->blending) {
+		struct sc_src_blend_cfg *cfg = &ctx->src_blend_cfg;
+
+		if (cfg->blend_src_h_pos + cfg->blend_src_width >
+				cfg->blend_src_stride) {
+			v4l2_err(&ctx->sc_dev->m2m.v4l2_dev,
+				"Invalid stride of blending image: %d\n",
+				cfg->blend_src_stride);
+			v4l2_err(&ctx->sc_dev->m2m.v4l2_dev,
+				"which is smaller than X-pos(%d) + width(%d)\n",
+				cfg->blend_src_h_pos, cfg->blend_src_width);
+			return -EINVAL;
+		}
+	}
+
 	if (V4L2_TYPE_IS_OUTPUT(f->type) &&
 		((pixm->width > limitout->max_w) ||
 			 (pixm->height > limitout->max_h))) {
@@ -1470,43 +1486,17 @@ static int sc_prepare_2nd_scaling(struct sc_ctx *ctx,
 		return -ENOMEM;
 
 	limit = &sc->variant->limit_input;
-	if (*v_ratio > SCALE_RATIO_CONST(4, 1)) {
+	if (*v_ratio > SCALE_RATIO_CONST(4, 1))
 		crop.height = ((src_height + 7) / 8) * 2;
-		if (crop.height < limit->min_h) {
-			if (SCALE_RATIO(limit->min_h,
-						ctx->d_frame.crop.height) >
-					SCALE_RATIO_CONST(4, 1)) {
-				dev_err(sc->dev,
-						"Failed height scale down %d -> %d\n",
-						src_height,
-						ctx->d_frame.crop.height);
 
-				free_intermediate_frame(ctx);
-				return -EINVAL;
-			}
+	if (crop.height < limit->min_h)
+		crop.height = limit->min_h;
 
-			crop.height = limit->min_h;
-		}
-	}
-
-	if (*h_ratio > SCALE_RATIO_CONST(4, 1)) {
+	if (*h_ratio > SCALE_RATIO_CONST(4, 1))
 		crop.width = ((src_width + 7) / 8) * 2;
-		if (crop.width < limit->min_w) {
-			if (SCALE_RATIO(limit->min_w,
-						ctx->d_frame.crop.width) >
-					SCALE_RATIO_CONST(4, 1)) {
-				dev_err(sc->dev,
-						"Failed width scale down %d -> %d\n",
-						src_width,
-						ctx->d_frame.crop.width);
 
-				free_intermediate_frame(ctx);
-				return -EINVAL;
-			}
-
-			crop.width = limit->min_w;
-		}
-	}
+	if (crop.width < limit->min_w)
+		crop.width = limit->min_w;
 
 	pixfmt = target_fmt->pixelformat;
 
@@ -1539,10 +1529,11 @@ static int sc_prepare_2nd_scaling(struct sc_ctx *ctx,
 	return 0;
 }
 
-static struct sc_dnoise_filter sc_filter_tab[4] = {
+static struct sc_dnoise_filter sc_filter_tab[5] = {
 	{SC_FT_240,   426,  240},
 	{SC_FT_480,   854,  480},
 	{SC_FT_720,  1280,  720},
+	{SC_FT_960,  1920,  960},
 	{SC_FT_1080, 1920, 1080},
 };
 
@@ -2497,8 +2488,10 @@ static int sc_release(struct file *file)
 
 	atomic_dec(&sc->m2m.in_use);
 
-	destroy_intermediate_frame(ctx);
 	v4l2_m2m_ctx_release(ctx->m2m_ctx);
+
+	destroy_intermediate_frame(ctx);
+
 	if (!IS_ERR(sc->aclk))
 		clk_unprepare(sc->aclk);
 	if (!IS_ERR(sc->pclk))

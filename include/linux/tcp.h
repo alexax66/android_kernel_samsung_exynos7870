@@ -29,9 +29,14 @@ static inline struct tcphdr *tcp_hdr(const struct sk_buff *skb)
 	return (struct tcphdr *)skb_transport_header(skb);
 }
 
+static inline unsigned int __tcp_hdrlen(const struct tcphdr *th)
+{
+	return th->doff * 4;
+}
+
 static inline unsigned int tcp_hdrlen(const struct sk_buff *skb)
 {
-	return tcp_hdr(skb)->doff * 4;
+	return __tcp_hdrlen(tcp_hdr(skb));
 }
 
 static inline struct tcphdr *inner_tcp_hdr(const struct sk_buff *skb)
@@ -277,6 +282,19 @@ struct tcp_sock {
 	unsigned int		keepalive_intvl;  /* time interval between keep alive probes */
 
 	int			linger2;
+
+/* Network Pacemaker */
+#ifdef CONFIG_NETPM
+	u8 netpm_netif;
+	u8 netpm_rbuf_flag;
+	u32 netpm_rtt_min;
+	u32 netpm_srtt;
+	u32 netpm_rttvar;
+	int netpm_cwnd_est;
+	int netpm_tcp_rmem_max;
+	int netpm_max_tput;
+	int netpm_rmem_max_curbdp;
+#endif
 
 /* Receiver side RTT estimation */
 	struct {

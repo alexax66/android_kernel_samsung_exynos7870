@@ -798,7 +798,12 @@ static void fimc_is_group_set_torch(struct fimc_is_group *group,
 
 	if (group->aeflashMode != ldr_frame->shot->ctl.aa.vendor_aeflashMode) {
 		group->aeflashMode = ldr_frame->shot->ctl.aa.vendor_aeflashMode;
+#ifdef CONFIG_LEDS_SUPPORT_FRONT_FLASH_AUTO
+		group->frontFlashMode = ldr_frame->shot->ctl.flash.flashMode;
+		fimc_is_vender_set_torch(group->aeflashMode, group->frontFlashMode);
+#else
 		fimc_is_vender_set_torch(group->aeflashMode);
+#endif
 	}
 
 	return;
@@ -880,7 +885,9 @@ static int fimc_is_group_task_start(struct fimc_is_groupmgr *groupmgr,
 	}
 
 #ifndef ENABLE_IS_CORE
-	fpsimd_set_as_user(gtask->task);
+#ifdef ENABLE_FPSIMD_FOR_USER
+	fpsimd_set_task_using(gtask->task);
+#endif
 #ifdef SET_CPU_AFFINITY
 	ret = set_cpus_allowed_ptr(gtask->task, cpumask_of(2));
 #endif
@@ -2050,6 +2057,8 @@ int fimc_is_group_stop(struct fimc_is_groupmgr *groupmgr,
 		for (entry = ENTRY_3AA; entry < ENTRY_ISCHAIN_END; ++entry) {
 			subdev = child->subdev[entry];
 			if (subdev && subdev->vctx && test_bit(FIMC_IS_SUBDEV_START, &subdev->state)) {
+				wait_subdev_flush_work(device, child, entry);
+
 				framemgr = GET_SUBDEV_FRAMEMGR(subdev);
 				if (!framemgr) {
 					mgerr("framemgr is NULL", group, group);
@@ -2063,7 +2072,6 @@ int fimc_is_group_stop(struct fimc_is_groupmgr *groupmgr,
 				}
 
 				if (!retry) {
-					wait_subdev_flush_work(device, child, entry);
 					mgerr(" waiting(subdev stop) is fail", device, group);
 					errcnt++;
 				}
@@ -2769,6 +2777,13 @@ int fimc_is_group_done(struct fimc_is_groupmgr *groupmgr,
 
 	child = group;
 	while(child) {
+#ifdef ENABLE_INIT_AWB
+		/* wb gain backup for initial AWB */
+		if (device->sensor && ((child == &device->group_isp) || (child->subdev[ENTRY_ISP])))
+			memcpy(device->sensor->last_wb, frame->shot->dm.color.gains,
+				sizeof(float) * WB_GAIN_COUNT);
+#endif
+
 		if ((child == &device->group_vra) || (child->subdev[ENTRY_VRA])) {
 #ifdef ENABLE_FD_SW
 			fimc_is_vra_trigger(device, &group->leader, frame);

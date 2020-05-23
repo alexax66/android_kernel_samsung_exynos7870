@@ -85,6 +85,16 @@
 				/* regulator-always-on = "yes"; optional, exist = enabled */
 				/* regulator-ramp-delay = <100>; optional*/
 			};
+
+			sm5703_fled {
+				compatible = "siliconmitus,sm5703-fled";
+				enable = <1 1>;
+				flash_current = <1200>;
+				movie_current = <150>;
+				torch_current = <150>;
+				sm5703,led1-gpio = <&gpd3 5 0>;
+				sm5703,led2-gpio = <&gpd3 7 0>;
+			};
 		};
 	};
 
@@ -142,7 +152,11 @@
 			interrupt-parent = <&gpa2>;
 			interrupts = <4 0 0>;
 			sx9306-i2c,nirq-gpio = <&gpa2 4 0>;
-			sx9306-i2c,normal-thd = <10>; /* normal touch threshold */
+			sx9306-i2c,ctrl0 = <0x24>;
+			sx9306-i2c,ctrl2 = <0x57>;
+			sx9306-i2c,ctrl3 = <0x02>;
+			sx9306-i2c,ctrl5 = <0x17>;
+			sx9306-i2c,normal-thd = <8>; /* normal touch threshold */
 			sx9306-i2c,ch-main = <2>; /* channel number */
 			sx9306-i2c,ch-sub1 = <0xff>;  /*oxff: Not be used sub channel */
 		};
@@ -161,7 +175,11 @@
 			interrupt-parent = <&gpa2>;
 			interrupts = <3 0 0>;
 			sx9306_wifi-i2c,nirq-gpio = <&gpa2 3 0>;
-			sx9306_wifi-i2c,normal-thd = <10>; /* normal touch threshold */
+			sx9306_wifi-i2c,ctrl0 = <0x24>;
+			sx9306_wifi-i2c,ctrl2 = <0x57>;
+			sx9306_wifi-i2c,ctrl3 = <0x02>;
+			sx9306_wifi-i2c,ctrl5 = <0x17>;
+			sx9306_wifi-i2c,normal-thd = <8>; /* normal touch threshold */
 			sx9306_wifi-i2c,ch-main = <2>; /* channel number */
 			sx9306_wifi-i2c,ch-sub1 = <0xff>;  /*oxff: Not be used sub channel */
 		};
@@ -450,7 +468,7 @@
 				};
 
 				ldo34_reg: LDO34 {
-					regulator-name = "VDD_CAM_IO_1P8";
+					regulator-name = "VDDIO_1.8V_CAM";
 					regulator-min-microvolt = <1800000>;
 					regulator-max-microvolt = <1800000>;
 					regulator-initial-mode = <0>;
@@ -492,7 +510,7 @@
 			compatible = "realtek,rt5659";
 			reg = <0x1b>;
 			pinctrl-names = "default";
-			pinctrl-0 = <&codec_ldoena &codec_reset &codec_irq>;
+			pinctrl-0 = <&codec_ldoena &codec_reset>;
 			interrupts = <7 0 0>;
 			interrupt-parent = <&gpd3>;
 			realtek,in3-differential = "true";
@@ -544,6 +562,14 @@
 	};
 
 	pinctrl@13750000 {
+		sd1_clk: sd1-clk {
+			samsung,pin-pud-pdn = <3>;
+		};
+
+		sd1_cmd: sd1-cmd {
+			samsung,pin-pud-pdn = <3>;
+		};
+
 		sd1_bus1: sd1-bus-width1 {
 			samsung,pin-pud = <3>;
 		};
@@ -589,11 +615,6 @@
 			samsung,pin-con-pdn = <3>;
 			samsung,pin-val = <1>;
 		};
-
-		codec_irq: codec-irq {
-			samsung,pins = "gpd3-7";
-			samsung,pin-pud = <0>;
-		};
 	};
 
 	pinctrl@139B0000 {
@@ -629,6 +650,10 @@
 			samsung,pin-pud-pdn = <3>;
 		};
 
+	};
+
+	serial_1: uart@13800000 {
+		status = "okay";
 	};
 
 	serial@13800000 {

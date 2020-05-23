@@ -52,6 +52,7 @@
 
 #define FMT_WAKE_TIME   (HZ/2)
 #define RAW_WAKE_TIME   (HZ*6)
+#define NET_WAKE_TIME	(HZ/2)
 
 static struct modem_shared *create_modem_shared_data(
 				struct platform_device *pdev)
@@ -85,6 +86,7 @@ static struct modem_shared *create_modem_shared_data(
 	memcpy(msd->storage.addr, &size, MAX_MIF_SEPA_SIZE);
 	msd->storage.addr += MAX_MIF_SEPA_SIZE;
 	spin_lock_init(&msd->lock);
+	spin_lock_init(&msd->active_list_lock);
 
 	return msd;
 }
@@ -237,6 +239,10 @@ static int attach_devices(struct io_device *iod, enum modem_link tx_link)
 
 	case SIPC5_CH_ID_BOOT_0 ... SIPC5_CH_ID_DUMP_9:
 		iod->waketime = RAW_WAKE_TIME;
+		break;
+
+	case SIPC_CH_ID_PDP_0 ... SIPC_CH_ID_LOOPBACK2:
+		iod->waketime = NET_WAKE_TIME;
 		break;
 
 	default:
@@ -450,9 +456,11 @@ static int parse_dt_mbox_pdata(struct device *dev, struct device_node *np,
 {
 	struct modem_mbox *mbox;
 	int ret = 0;
+#ifndef CONFIG_ECT
 	const struct property *prop;
 	const __be32 *val;
 	int nr;
+#endif	
 
 	if (pdata->link_types != LINKTYPE(LINKDEV_SHMEM))
 		return ret;
@@ -497,6 +505,7 @@ static int parse_dt_mbox_pdata(struct device *dev, struct device_node *np,
 	mif_dt_read_u32 (np, "mbx_ap2cp_lock_value",
 		mbox->mbx_ap2cp_lock_value);
 
+#ifndef CONFIG_ECT
 	/* get AP core clock table from DT */
 	prop = of_find_property(np, "mif,ap_clk_table", NULL);
 	if (!prop || !prop->value) {
@@ -556,6 +565,7 @@ static int parse_dt_mbox_pdata(struct device *dev, struct device_node *np,
 		while (nr--)
 			mbox->int_clk_table[nr] = be32_to_cpup(val++);
 	}
+#endif
 
 	return ret;
 }
@@ -600,6 +610,10 @@ static int parse_dt_iodevs_pdata(struct device *dev, struct device_node *np,
 			mif_dt_read_u32(child, "iod,dl_buffer_size",
 					iod->dl_buffer_size);
 		}
+
+		if (iod->attrs & IODEV_ATTR(ATTR_OPTION_REGION))
+			mif_dt_read_string(child, "iod,option_region",
+					iod->option_region);
 
 		i++;
 	}
@@ -748,11 +762,12 @@ static int modem_probe(struct platform_device *pdev)
 	struct modem_shared *msd;
 	struct modem_ctl *modemctl;
 	struct io_device **iod;
-	unsigned size;
+	size_t size;
 	struct link_device *ld;
 	enum mif_sim_mode sim_mode;
 
-	mif_info("%s: +++\n", pdev->name);
+	mif_info("%s: +++ (%s)\n",
+			pdev->name, CONFIG_OPTION_REGION);
 
 	if (dev->of_node) {
 		pdata = modem_if_parse_dt_pdata(dev);
@@ -809,6 +824,11 @@ static int modem_probe(struct platform_device *pdev)
 			pdata->iodevs[i].attrs & IODEV_ATTR(ATTR_DUALSIM))
 			continue;
 
+		if (pdata->iodevs[i].attrs & IODEV_ATTR(ATTR_OPTION_REGION)
+				&& strcmp(pdata->iodevs[i].option_region,
+					CONFIG_OPTION_REGION))
+			continue;
+
 		iod[i] = create_io_device(pdev, &pdata->iodevs[i], msd,
 					  modemctl, pdata);
 		if (!iod[i]) {
@@ -832,8 +852,10 @@ static int modem_probe(struct platform_device *pdev)
 
 free_iod:
 	for (i = 0; i < pdata->num_iodevs; i++) {
-		if (iod[i])
+		if (iod[i]) {
+			sipc5_deinit_io_device(iod[i]);
 			devm_kfree(dev, iod[i]);
+		}
 	}
 	kfree(iod);
 
@@ -928,6 +950,7 @@ static struct platform_driver modem_driver = {
 		.name = "mif_sipc5",
 		.owner = THIS_MODULE,
 		.pm = &modem_pm_ops,
+		.suppress_bind_attrs = true,
 #ifdef CONFIG_OF
 		.of_match_table = of_match_ptr(sec_modem_match),
 #endif

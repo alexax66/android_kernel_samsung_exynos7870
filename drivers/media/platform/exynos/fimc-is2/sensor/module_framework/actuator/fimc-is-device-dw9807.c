@@ -102,15 +102,15 @@ int sensor_dw9807_init(struct i2c_client *client, struct fimc_is_caldata_list_dw
 		if (ret < 0)
 			goto p_err;
 
-		/* wait 100us after power-on */
-		udelay(100);
-
 		/* PD disable(normal operation) */
 		i2c_data[0] = REG_CONTROL;
 		i2c_data[1] = 0x00;
 		ret = fimc_is_sensor_addr8_write8(client, i2c_data[0], i2c_data[1]);
 		if (ret < 0)
 			goto p_err;
+
+		/* wait 100us after power-on */
+		udelay(100);
 
 		/* Ring mode enable */
 		i2c_data[0] = REG_CONTROL;
@@ -268,6 +268,10 @@ int sensor_dw9807_actuator_init(struct v4l2_subdev *subdev, u32 val)
 	struct fimc_is_caldata_list_dw9807 *cal_data = NULL;
 	struct i2c_client *client = NULL;
 	long cal_addr;
+#ifdef USE_CAMERA_HW_BIG_DATA
+	struct fimc_is_device_sensor *device = NULL;
+	struct cam_hw_param *hw_param = NULL;
+#endif
 #ifdef DEBUG_ACTUATOR_TIME
 	struct timeval st, end;
 	do_gettimeofday(&st);
@@ -296,8 +300,21 @@ int sensor_dw9807_actuator_init(struct v4l2_subdev *subdev, u32 val)
 
 	/* Read into EEPROM data or default setting */
 	ret = sensor_dw9807_init(client, cal_data);
-	if (ret < 0)
+	if (ret < 0) {
+#ifdef USE_CAMERA_HW_BIG_DATA
+		device = v4l2_get_subdev_hostdata(subdev);
+		if (device) {
+			if (device->position == SENSOR_POSITION_REAR) {
+				fimc_is_sec_get_rear_hw_param(&hw_param);
+			} else if (device->position == SENSOR_POSITION_FRONT) {
+				fimc_is_sec_get_front_hw_param(&hw_param);
+			}
+		}
+		if (hw_param)
+			hw_param->i2c_af_err_cnt++;
+#endif
 		goto p_err;
+	}
 
 	ret = sensor_dw9807_init_position(client, actuator);
 	if (ret < 0)
@@ -578,6 +595,7 @@ MODULE_DEVICE_TABLE(of, exynos_fimc_is_dw9807_match);
 
 static const struct i2c_device_id actuator_dw9807_idt[] = {
 	{ ACTUATOR_NAME, 0 },
+	{},
 };
 
 static struct i2c_driver actuator_dw9807_driver = {

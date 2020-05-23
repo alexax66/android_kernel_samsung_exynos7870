@@ -127,8 +127,8 @@ struct dw_mci_req_log {
 	u32				info1;
 	u32				info2;
 	u32				info3;
-	u32				pending_events;
-	u32				completed_events;
+	unsigned long			pending_events;
+	unsigned long			completed_events;
 	enum dw_mci_state		state;
 	enum dw_mci_state		state_cmd;
 	enum dw_mci_state		state_dat;
@@ -251,6 +251,7 @@ struct dw_mci_tuning_data {
 struct dw_mci {
 	spinlock_t		lock;
 	void __iomem		*regs;
+	unsigned int		channel;
 
 	struct scatterlist	*sg;
 	struct sg_mapping_iter	sg_miter;
@@ -273,11 +274,11 @@ struct dw_mci {
 	void			*sg_cpu;
 	const struct dw_mci_dma_ops	*dma_ops;
 #ifdef CONFIG_MMC_DW_IDMAC
-	unsigned int		ring_size;
+	unsigned short		ring_size;
 #else
 	struct dw_mci_dma_data	*dma_data;
 #endif
-	unsigned int            desc_sz;
+	unsigned short          desc_sz;
 	struct pm_qos_request	pm_qos_int;
 	u32			cmd_status;
 	u32			data_status;
@@ -286,6 +287,7 @@ struct dw_mci {
 	struct tasklet_struct	tasklet;
 	u32			tasklet_state;
 	struct work_struct	card_work;
+	u32			card_detect_cnt;
 	unsigned long		pending_events;
 	unsigned long		completed_events;
 	enum dw_mci_state	state;
@@ -334,6 +336,9 @@ struct dw_mci {
 	unsigned long		irq_flags; /* IRQ flags */
 	int			irq;
 
+	/* Interrupt count for interrupt storming case */
+	unsigned int 		int_count;
+
 	/* Save request status */
 #define DW_MMC_REQ_IDLE		0
 #define DW_MMC_REQ_BUSY		1
@@ -355,6 +360,9 @@ struct dw_mci {
 
 	/* Sfr dump */
 	struct dw_mci_sfe_ram_dump	*sfr_dump;
+	struct buffer_head *self_test_bh;
+	int self_test_mode;
+	struct idmac_desc_64addr *desc_st;
 };
 
 /* DMA ops for Internal/External DMAC interface */
@@ -392,6 +400,8 @@ struct dw_mci_dma_ops {
 #define DW_MCI_QUIRK_ENABLE_ULP			BIT(9)
 /* Use the security management unit */
 #define DW_MCI_QUIRK_USE_SMU			BIT(10)
+/* Switching transfer */
+#define DW_MCI_SW_TRANS					BIT(11)
 
 /* Slot level quirks */
 /* This slot has no write protect */
@@ -444,13 +454,19 @@ struct dw_mci_board {
 	unsigned char io_mode;
 
 	enum dw_mci_cd_types cd_type;
-#if defined(CONFIG_BCM4343)  || defined(CONFIG_BCM4343_MODULE) || defined(CONFIG_BCM43454) || defined(CONFIG_BCM43454_MODULE)
+#if defined(CONFIG_BCM4343)  || defined(CONFIG_BCM4343_MODULE) || \
+	defined(CONFIG_BCM43454) || defined(CONFIG_BCM43454_MODULE) || \
+	defined(CONFIG_BCM43455) || defined(CONFIG_BCM43455_MODULE) || \
+	defined(CONFIG_BCM43456) || defined(CONFIG_BCM43456_MODULE)
 	int (*ext_cd_init)(void (*notify_func)
 		(void *dev_id, int state), void *dev_id, struct mmc_host *mmc);
 #else
 	int (*ext_cd_init)(void (*notify_func)
 			(void *dev_id, int state), void *dev_id);
-#endif /*CONFIG_BCM4343 || CONFIG_BCM4343_MODULE*/
+#endif /* CONFIG_BCM4343 || CONFIG_BCM4343_MODULE || \
+	CONFIG_BCM43454 || CONFIG_BCM43454_MODULE || \
+	CONFIG_BCM43455 || CONFIG_BCM43455_MODULE || \
+	CONFIG_BCM43456 || CONFIG_BCM43456_MODULE */
 	int (*ext_cd_cleanup)(void (*notify_func)
 			(void *dev_id, int state), void *dev_id);
 	struct dw_mci_dma_ops *dma_ops;
@@ -463,6 +479,7 @@ struct dw_mci_board {
 	u32 hto_timeout;
 	bool use_gate_clock;
 	bool use_biu_gate_clock;
+	bool use_gpio_invert;
 	bool enable_cclk_on_suspend;
 	bool on_suspend;
 
@@ -476,7 +493,7 @@ struct dw_mci_board {
 				 SDMMC_IDMAC_INT_FBE | SDMMC_IDMAC_INT_RI | \
 				 SDMMC_IDMAC_INT_TI)
 
-#if defined(CONFIG_MMC_DW_FMP_DM_CRYPT) || defined(CONFIG_MMC_DW_FMP_ECRYPT_FS)
+#if defined(CONFIG_MMC_DW_FMP_DM_CRYPT)
 struct idmac_desc_64addr {
 	u32		des0;	/* Control Descriptor */
 #define IDMAC_DES0_DIC	BIT(1)
@@ -496,6 +513,8 @@ struct idmac_desc_64addr {
 	((d)->des2 = ((d)->des2 & 0xcfffffff) | v << 28)
 #define IDMAC_SET_DAS(d, v) \
 	((d)->des2 = ((d)->des2 & 0x3fffffff) | v << 30)
+#define IDMAC_GET_FAS(d)	((d)->des2 & 0x30000000)
+#define IDMAC_GET_DAS(d)	((d)->des2 & 0xc0000000)
 	u32		des3;	/* Reserved */
 	u32		des4;	/* Lower 32-bits of Buffer Address Pointer 1*/
 	u32		des5;	/* Upper 32-bits of Buffer Address Pointer 1*/
@@ -596,5 +615,9 @@ do {	\
 #define CLEAR		0
 #define AES_CBC		1
 #define AES_XTS		2
+
+#define MMC_FMP_DISK_ENC_MODE	(1 << 0)
+#define MMC_FMP_FILE_ENC_MODE	(1 << 1)
+#define MMC_FMP_SELF_TEST_MODE	(1 << 2)
 
 #endif /* LINUX_MMC_DW_MMC_H */

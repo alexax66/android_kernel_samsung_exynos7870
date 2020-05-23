@@ -214,8 +214,6 @@ static int exynos_irq_request_resources(struct irq_data *irqd)
 
 	spin_unlock_irqrestore(&bank->slock, flags);
 
-	exynos_irq_unmask(irqd);
-
 	return 0;
 }
 
@@ -235,8 +233,6 @@ static void exynos_irq_release_resources(struct irq_data *irqd)
 	reg_con = bank->pctl_offset + bank_type->reg_offset[PINCFG_TYPE_FUNC];
 	shift = irqd->hwirq * bank_type->fld_width[PINCFG_TYPE_FUNC];
 	mask = (1 << bank_type->fld_width[PINCFG_TYPE_FUNC]) - 1;
-
-	exynos_irq_mask(irqd);
 
 	spin_lock_irqsave(&bank->slock, flags);
 
@@ -1418,12 +1414,12 @@ struct samsung_pin_ctrl exynos8890_pin_ctrl[] = {
 
 /* pin banks of exynos7870 pin-controller 0 (ALIVE) */
 static struct samsung_pin_bank exynos7870_pin_banks0[] = {
-	EXYNOS_PIN_BANK_EINTW(bank_type_5, 6, 0x000, "etc0", 0x00),
-	EXYNOS_PIN_BANK_EINTW(bank_type_5, 3, 0x020, "etc1", 0x00),
+	EXYNOS_PIN_BANK_EINTN(bank_type_5, 6, 0x000, "etc0"),
+	EXYNOS_PIN_BANK_EINTN(bank_type_5, 3, 0x020, "etc1"),
 	EXYNOS_PIN_BANK_EINTW(bank_type_5, 8, 0x040, "gpa0", 0x00),
 	EXYNOS_PIN_BANK_EINTW(bank_type_5, 8, 0x060, "gpa1", 0x04),
 	EXYNOS_PIN_BANK_EINTW(bank_type_5, 8, 0x080, "gpa2", 0x08),
-	EXYNOS_PIN_BANK_EINTW(bank_type_5, 2, 0x0c0, "gpq0", 0x00),
+	EXYNOS_PIN_BANK_EINTN(bank_type_5, 2, 0x0c0, "gpq0"),
 };
 
 /* pin banks of exynos7870 pin-controller 1 (DISPAUD) */
@@ -1545,9 +1541,11 @@ struct samsung_pin_ctrl exynos7870_pin_ctrl[] = {
 		/* pin-controller instance 7 TOUCH data */
 		.pin_banks	= exynos7870_pin_banks7,
 		.nr_banks	= ARRAY_SIZE(exynos7870_pin_banks7),
+#ifndef CONFIG_MST_SECURE_GPIO
 		.eint_gpio_init = exynos_eint_gpio_init,
 		.suspend	= exynos_pinctrl_suspend,
 		.resume		= exynos_pinctrl_resume,
+#endif
 		.label		= "exynos7870-gpio-ctrl7",
 	},
 };
@@ -1569,8 +1567,14 @@ int exynos7870_secgpio_get_nr_gpio(void)
 #if defined(CONFIG_SOC_EXYNOS7870)
 u32 exynos_eint_to_pin_num(int eint)
 {
-	/* offset = 9 : to skip etc group */
-        return exynos7870_pin_ctrl[0].base + eint + 9;
+	int i;
+	int etc_offset = 0;
+
+	for(i = 0; i < exynos7870_pin_ctrl[0].nr_banks &&
+		strncmp(exynos7870_pin_ctrl[0].pin_banks[i].name, "gpa", 3); i++)
+		etc_offset += exynos7870_pin_ctrl[0].pin_banks[i].nr_pins;
+
+        return exynos7870_pin_ctrl[0].base + eint + etc_offset;
 }
 #endif
 

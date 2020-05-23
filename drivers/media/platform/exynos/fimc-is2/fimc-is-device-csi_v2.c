@@ -700,6 +700,9 @@ static void csi_err_handler(struct fimc_is_device_csi *csi, u32 *err_id)
 			merr("[VC%d][F%d] Occured the %s(%d)", csi, i, atomic_read(&csi->fcount), err_str, j);
 		}
 	}
+
+	if (err_str && (strcmp(err_str, GET_STR(CSIS_ERR_DMA_ABORT_DONE)) != 0))
+		fimc_is_vender_csi_err_handler(csi);
 }
 
 static irqreturn_t csi_isr(int irq, void *data)
@@ -897,10 +900,12 @@ static int csi_s_power(struct v4l2_subdev *subdev,
 		return -EINVAL;
 	}
 
-	if (on)
+	if (on) {
+		phy_set(csi->phy, 1, NULL);
 		ret = phy_power_on(csi->phy);
-	else
+	} else {
 		ret = phy_power_off(csi->phy);
+	}
 
 	if (ret) {
 		err("fail to csi%d power on/off(%d)", csi->instance, on);
@@ -928,6 +933,8 @@ static int csi_stream_on(struct v4l2_subdev *subdev,
 	BUG_ON(!csi);
 	BUG_ON(!csi->sensor_cfg);
 	BUG_ON(!device);
+
+	fimc_is_vendor_csi_stream_on(csi);
 
 	if (test_bit(CSIS_START_STREAM, &csi->state)) {
 		merr("[CSI] already start", csi);

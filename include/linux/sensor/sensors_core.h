@@ -30,7 +30,7 @@
 
 int sensors_create_symlink(struct kobject *, const char *);
 void sensors_remove_symlink(struct kobject *, const char *);
-int sensors_register(struct device *, void *,
+int sensors_register(struct device **, void *,
 	struct device_attribute *[], char *);
 void sensors_unregister(struct device *, struct device_attribute *[]);
 void destroy_sensor_class(void);

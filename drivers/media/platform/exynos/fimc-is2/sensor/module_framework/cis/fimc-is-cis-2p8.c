@@ -155,6 +155,11 @@ int sensor_2p8_cis_init(struct v4l2_subdev *subdev)
 	struct fimc_is_cis *cis;
 	u32 setfile_index = 0;
 	cis_setting_info setinfo;
+#ifdef USE_CAMERA_HW_BIG_DATA
+	struct cam_hw_param *hw_param = NULL;
+	struct fimc_is_device_sensor_peri *sensor_peri = NULL;
+#endif
+
 	setinfo.param = NULL;
 	setinfo.return_value = 0;
 
@@ -173,6 +178,15 @@ int sensor_2p8_cis_init(struct v4l2_subdev *subdev)
 
 	ret = sensor_cis_check_rev(cis);
 	if (ret < 0) {
+#ifdef USE_CAMERA_HW_BIG_DATA
+		sensor_peri = container_of(cis, struct fimc_is_device_sensor_peri, cis);
+		if (sensor_peri && sensor_peri->module->position == SENSOR_POSITION_REAR)
+			fimc_is_sec_get_rear_hw_param(&hw_param);
+		else if (sensor_peri && sensor_peri->module->position == SENSOR_POSITION_FRONT)
+			fimc_is_sec_get_front_hw_param(&hw_param);
+		if (hw_param)
+			hw_param->i2c_sensor_err_cnt++;
+#endif
 		warn("sensor_2p8_check_rev is fail when cis init");
 		cis->rev_flag = true;
 		ret = 0;
@@ -1733,6 +1747,7 @@ MODULE_DEVICE_TABLE(of, exynos_fimc_is_cis_2p8_match);
 
 static const struct i2c_device_id cis_2p8_idt[] = {
 	{ SENSOR_NAME, 0 },
+	{},
 };
 
 static struct i2c_driver cis_2p8_driver = {

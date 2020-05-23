@@ -78,7 +78,7 @@ static void sensor_imx258_cis_data_calculation(const struct sensor_pll_info *pll
 
 	/* 2. pixel rate calculation (Mpps) */
 	pll_voc_a = pll_info->ext_clk / pll_info->pre_pll_clk_div * pll_info->pll_multiplier;
-	vt_pix_clk_hz = pll_voc_a /(pll_info->vt_sys_clk_div * pll_info->vt_pix_clk_div) * 4;
+	vt_pix_clk_hz = pll_voc_a /(pll_info->vt_sys_clk_div * pll_info->vt_pix_clk_div) * NUMBER_OF_PIPELINE;
 
 	dbg_sensor("ext_clock(%d) / pre_pll_clk_div(%d) * pll_multiplier(%d) = pll_voc_a(%d)\n",
 						pll_info->ext_clk, pll_info->pre_pll_clk_div,
@@ -164,6 +164,11 @@ int sensor_imx258_cis_init(struct v4l2_subdev *subdev)
 	int read_cnt = 0;
 
 	cis_setting_info setinfo;
+#ifdef USE_CAMERA_HW_BIG_DATA
+	struct cam_hw_param *hw_param = NULL;
+	struct fimc_is_device_sensor_peri *sensor_peri = NULL;
+#endif
+
 	setinfo.param = NULL;
 	setinfo.return_value = 0;
 
@@ -178,6 +183,23 @@ int sensor_imx258_cis_init(struct v4l2_subdev *subdev)
 
 	BUG_ON(!cis->cis_data);
 	memset(cis->cis_data, 0, sizeof(cis_shared_data));
+	cis->rev_flag = false;
+
+	ret = sensor_cis_check_rev(cis);
+	if (ret < 0) {
+#ifdef USE_CAMERA_HW_BIG_DATA
+		sensor_peri = container_of(cis, struct fimc_is_device_sensor_peri, cis);
+		if (sensor_peri && sensor_peri->module->position == SENSOR_POSITION_REAR)
+			fimc_is_sec_get_rear_hw_param(&hw_param);
+		else if (sensor_peri && sensor_peri->module->position == SENSOR_POSITION_FRONT)
+			fimc_is_sec_get_front_hw_param(&hw_param);
+		if (hw_param)
+			hw_param->i2c_sensor_err_cnt++;
+#endif
+		warn("sensor_imx258_check_rev is fail when cis init");
+		cis->rev_flag = true;
+		ret = 0;
+	}
 
 	cis->cis_data->cur_width = SENSOR_IMX258_MAX_WIDTH;
 	cis->cis_data->cur_height = SENSOR_IMX258_MAX_HEIGHT;
@@ -218,6 +240,20 @@ int sensor_imx258_cis_init(struct v4l2_subdev *subdev)
 			sensor_imx258_init_setfile_size);
 	if (ret < 0) {
 		err("sensor_imx258_set_registers - init fail!!");
+		goto p_err;
+	}
+
+	ret = sensor_cis_set_registers(subdev, sensor_imx258_init_setfile_global,
+			sensor_imx258_init_setfile_global_size);
+	if (ret < 0) {
+		err("sensor_imx258_set_registers - global fail!!");
+		goto p_err;
+	}
+
+	ret = sensor_cis_set_registers(subdev, sensor_imx258_init_setfile_Image,
+			sensor_imx258_init_setfile_Image_size);
+	if (ret < 0) {
+		err("sensor_imx258_set_registers - Image fail!!");
 		goto p_err;
 	}
 
@@ -386,20 +422,6 @@ int sensor_imx258_cis_mode_change(struct v4l2_subdev *subdev, u32 mode)
 	}
 
 	sensor_imx258_cis_data_calculation(sensor_imx258_pllinfos[mode], cis->cis_data);
-
-	ret = sensor_cis_set_registers(subdev, sensor_imx258_init_setfile_global,
-			sensor_imx258_init_setfile_global_size);
-	if (ret < 0) {
-		err("sensor_imx258_set_registers - global fail!!");
-		goto p_err;
-	}
-
-	ret = sensor_cis_set_registers(subdev, sensor_imx258_init_setfile_Image,
-			sensor_imx258_init_setfile_Image_size);
-	if (ret < 0) {
-		err("sensor_imx258_set_registers - Image fail!!");
-		goto p_err;
-	}
 
 	ret = sensor_cis_set_registers(subdev, sensor_imx258_setfiles[mode], sensor_imx258_setfile_sizes[mode]);
 	if (ret < 0) {
@@ -1041,6 +1063,10 @@ int sensor_imx258_cis_set_analog_gain(struct v4l2_subdev *subdev, struct ae_para
 	}
 
 	if (analog_gain > cis->cis_data->max_analog_gain[0]) {
+		err("wrong analog gain, input (x%d, %d), max (x%d, %d)",
+			again->val, analog_gain,
+			cis->cis_data->max_analog_gain[1],
+			cis->cis_data->max_analog_gain[0]);
 		analog_gain = cis->cis_data->max_analog_gain[0];
 	}
 
@@ -1283,6 +1309,10 @@ int sensor_imx258_cis_set_digital_gain(struct v4l2_subdev *subdev, struct ae_par
 		long_gain = cis->cis_data->min_digital_gain[0];
 	}
 	if (long_gain > cis->cis_data->max_digital_gain[0]) {
+		err("wrong digital long gain, input (x%d, %d), max (x%d, %d)\n",
+			dgain->long_val, long_gain,
+			cis->cis_data->max_digital_gain[1],
+			cis->cis_data->max_digital_gain[0]);
 		long_gain = cis->cis_data->max_digital_gain[0];
 	}
 
@@ -1290,6 +1320,10 @@ int sensor_imx258_cis_set_digital_gain(struct v4l2_subdev *subdev, struct ae_par
 		short_gain = cis->cis_data->min_digital_gain[0];
 	}
 	if (short_gain > cis->cis_data->max_digital_gain[0]) {
+		err("wrong digital short gain, input (x%d, %d), max (x%d, %d)",
+			dgain->short_val, short_gain,
+			cis->cis_data->max_digital_gain[1],
+			cis->cis_data->max_digital_gain[0]);
 		short_gain = cis->cis_data->max_digital_gain[0];
 	}
 
@@ -1702,6 +1736,7 @@ MODULE_DEVICE_TABLE(of, exynos_fimc_is_cis_imx258_match);
 
 static const struct i2c_device_id cis_imx258_idt[] = {
 	{ SENSOR_NAME, 0 },
+	{},
 };
 
 static struct i2c_driver cis_imx258_driver = {

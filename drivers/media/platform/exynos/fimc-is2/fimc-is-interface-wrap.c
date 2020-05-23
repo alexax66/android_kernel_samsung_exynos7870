@@ -449,11 +449,47 @@ int fimc_is_itf_process_off_wrap(struct fimc_is_device_ischain *device, u32 grou
 	return ret;
 }
 
+void fimc_is_itf_sudden_stop_wrap(struct fimc_is_device_ischain *device, u32 instance)
+{
+	int ret = 0;
+	struct fimc_is_device_sensor *sensor;
+
+	if (!device) {
+		warn_hw("[%d]%s: device(null)\n", instance, __func__);
+		return;
+	}
+
+	sensor = device->sensor;
+	if (!sensor) {
+		warn_hw("[%d]%s: sensor(null)\n", instance, __func__);
+		return;
+	}
+
+	if (test_bit(FIMC_IS_SENSOR_FRONT_START, &sensor->state)) {
+		info_hw("[%d]%s: sudden close, call sensor_front_stop()\n", instance, __func__);
+
+		ret = fimc_is_sensor_front_stop(sensor);
+		if (ret)
+			merr("fimc_is_sensor_front_stop is fail(%d)", sensor, ret);
+	}
+
+	return;
+}
+
 int fimc_is_itf_power_down_wrap(struct fimc_is_interface *interface, u32 instance)
 {
 	int ret = 0;
+	struct fimc_is_core *core;
 
 	dbg_hw("%s\n", __func__);
+
+	core = (struct fimc_is_core *)interface->core;
+	if (!core) {
+		warn_hw("[%d]%s: core(null)\n", instance, __func__);
+		return ret;
+	}
+
+	fimc_is_itf_sudden_stop_wrap(&core->ischain[instance], instance);
 
 	return ret;
 }

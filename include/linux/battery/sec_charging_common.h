@@ -573,16 +573,18 @@ struct sec_battery_platform_data {
 	/* battery swelling */
 	int swelling_high_temp_block;
 	int swelling_high_temp_recov;
-	int swelling_low_temp_block;
-	int swelling_low_temp_recov;
-	int swelling_low_temp_additional;
+	int swelling_low_temp_block_1st;
+	int swelling_low_temp_recov_1st;
+	int swelling_low_temp_block_2nd;
+	int swelling_low_temp_recov_2nd;
+	int swelling_low_temp_2step_mode;
 	unsigned int swelling_low_temp_current;
-	unsigned int swelling_low_temp_additional_current;
 	unsigned int swelling_low_temp_topoff;
 	unsigned int swelling_high_temp_current;
 	unsigned int swelling_high_temp_topoff;
 	unsigned int swelling_normal_float_voltage;
 	unsigned int swelling_drop_float_voltage;
+	unsigned int swelling_offset_voltage;
 	unsigned int swelling_high_rechg_voltage;
 	unsigned int swelling_low_rechg_voltage;
 
@@ -597,6 +599,7 @@ struct sec_battery_platform_data {
 	unsigned int *step_charging_current;
 #endif
 
+	bool factory_store_mode_en;
 	/* self discharging */
 	bool self_discharging_en;
 	unsigned int discharging_adc_max;
@@ -737,6 +740,11 @@ struct sec_battery_platform_data {
 	unsigned long recharging_total_time;
 	/* reset charging for abnormal malfunction (0: not use) */
 	unsigned long charging_reset_time;
+#if defined(CONFIG_CONDITIONAL_SAFETY_TIMER)
+	unsigned int hv_charging_total_time;
+	unsigned int normal_charging_total_time;
+	unsigned int usb_charging_total_time;
+#endif
 
 	/* fuel gauge */
 	char *fuelgauge_name;
@@ -808,6 +816,9 @@ struct sec_battery_platform_data {
 	bool fake_capacity;
 	bool always_enable;
 	bool chg_eoc_dualpath;
+	unsigned int expired_time;
+	unsigned int recharging_expired_time;
+	int standard_curr;
 
 	/* ADC setting */
 	unsigned int adc_check_count;
@@ -836,6 +847,7 @@ struct sec_charger_platform_data {
 	unsigned long chg_irq_attr;
 
 	bool support_slow_charging;
+	unsigned int slow_current_threshold;
 
 	/* otg_en setting */
 	int otg_en;

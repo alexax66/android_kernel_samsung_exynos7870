@@ -204,7 +204,7 @@ static int mcu_ipc_probe(struct platform_device *pdev)
 	struct resource *res = NULL;
 	int mcu_ipc_irq;
 	int err = 0;
-	u32 id;
+	u32 id = 0;
 
 	dev_err(&pdev->dev, "%s: mcu_ipc probe start.\n", __func__);
 
@@ -314,6 +314,7 @@ static struct platform_driver mcu_ipc_driver = {
 		.owner = THIS_MODULE,
 		.of_match_table = of_match_ptr(exynos_mcu_ipc_dt_match),
 		.pm = &mcu_ipc_pm_ops,
+		.suppress_bind_attrs = true,
 	},
 };
 module_platform_driver(mcu_ipc_driver);

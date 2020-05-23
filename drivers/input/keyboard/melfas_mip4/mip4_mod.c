@@ -20,10 +20,10 @@ int mip4_tk_regulator_control(struct mip4_tk_info *info, int enable)
 	int ret = 0;
 	static bool on;
 
-	dev_info(dev, "%s: %s\n", __func__, enable ? "on" : "off");
+	input_info(true, dev, "%s: %s\n", __func__, enable ? "on" : "off");
 
 	if (on == enable) {
-		dev_info(dev,
+		input_info(true, dev,
 			"%s: regulator already %s - skip\n",
 			__func__, enable ? "enabled" : "disabled");
 		return 0;
@@ -33,7 +33,7 @@ int mip4_tk_regulator_control(struct mip4_tk_info *info, int enable)
 
 	regulator_avdd = regulator_get(NULL, pdata->pwr_reg_name);
 	if (IS_ERR(regulator_avdd)) {
-		dev_err(dev,
+		input_err(true, dev,
 			"%s [ERROR] regulator_get : %s\n",
 			__func__, pdata->pwr_reg_name);
 		ret = PTR_ERR(regulator_avdd);
@@ -47,7 +47,7 @@ int mip4_tk_regulator_control(struct mip4_tk_info *info, int enable)
 	if (enable) {
 		ret = regulator_enable(regulator_avdd);
 		if (ret) {
-			dev_err(dev, "%s [ERROR] regulator_enable : %s\n",
+			input_err(true, dev, "%s [ERROR] regulator_enable : %s\n",
 			__func__, pdata->pwr_reg_name);
 
 			goto ERROR;
@@ -63,7 +63,7 @@ int mip4_tk_regulator_control(struct mip4_tk_info *info, int enable)
 	return 0;
 
 ERROR:
-	dev_err(dev, "%s [ERROR]\n", __func__);
+	input_err(true, dev, "%s [ERROR]\n", __func__);
 
 	return ret;
 }
@@ -76,7 +76,7 @@ int mip4_tk_power_off(struct mip4_tk_info *info)
 	struct mip4_tk_platform_data *pdata = info->pdata;
 	int ret = 0;
 
-	dev_info(&info->client->dev, "%s\n", __func__);
+	input_info(true, &info->client->dev, "%s\n", __func__);
 
 	if (pdata->pwr_reg_name || pdata->bus_reg_name) {
 		ret = mip4_tk_regulator_control(info, false);
@@ -84,7 +84,7 @@ int mip4_tk_power_off(struct mip4_tk_info *info)
 		if (pdata->gpio_pwr_en)
 			gpio_set_value(pdata->gpio_pwr_en, false);
 
-		if (pdata->gpio_bus_en);
+		if (pdata->gpio_bus_en)
 			gpio_set_value(pdata->gpio_bus_en, false);
 	}
 
@@ -99,7 +99,7 @@ int mip4_tk_power_on(struct mip4_tk_info *info)
 	struct mip4_tk_platform_data *pdata = info->pdata;
 	int ret = 0;
 
-	dev_info(&info->client->dev, "%s\n", __func__);
+	input_info(true, &info->client->dev, "%s\n", __func__);
 
 	if (pdata->pwr_reg_name || pdata->bus_reg_name) {
 		ret = mip4_tk_regulator_control(info, true);
@@ -107,11 +107,9 @@ int mip4_tk_power_on(struct mip4_tk_info *info)
 		if (pdata->gpio_pwr_en)
 			gpio_set_value(pdata->gpio_pwr_en, true);
 
-		if (pdata->gpio_bus_en);
+		if (pdata->gpio_bus_en)
 			gpio_set_value(pdata->gpio_bus_en, true);
 	}
-
-	msleep(200);
 
 	return ret;
 }
@@ -123,15 +121,13 @@ void mip4_tk_clear_input(struct mip4_tk_info *info)
 {
 	int i;
 
-	dev_dbg(&info->client->dev, "%s [START]\n", __func__);
+	input_info(true, &info->client->dev, "%s\n", __func__);
 
 	for (i = 0; i < info->key_num; i++) {
 		input_report_key(info->input_dev, info->key_code[i], 0);
 	}
 
 	input_sync(info->input_dev);
-
-	dev_dbg(&info->client->dev, "%s [DONE]\n", __func__);
 
 	return;
 }
@@ -147,19 +143,18 @@ void mip4_tk_input_event_handler(struct mip4_tk_info *info, u8 sz, u8 *buf)
 	int strength;
 	int keycode;
 
-	dev_dbg(&info->client->dev, "%s [START]\n", __func__);
-	//print_hex_dump(KERN_ERR, MIP_DEV_NAME " Event Packet : ", DUMP_PREFIX_OFFSET, 16, 1, buf, sz, false);
-
 	for (i = 0; i < sz; i += info->event_size) {
 		u8 *packet = &buf[i];
 
-		//Event format & type
+		/* Event format & type */
 		if (info->event_format == 4) {
 			strength = packet[1];
 		} else if (info->event_format == 9) {
 			strength = (packet[1] << 8) | packet[2];
 		} else {
-			dev_err(&info->client->dev, "%s [ERROR] Unknown event format [%d]\n", __func__, info->event_format);
+			input_err(true, &info->client->dev,
+				"%s [ERROR] Unknown event format [%d]\n",
+				__func__, info->event_format);
 			goto ERROR;
 		}
 
@@ -167,37 +162,67 @@ void mip4_tk_input_event_handler(struct mip4_tk_info *info, u8 sz, u8 *buf)
 		type = (packet[0] & 0x40) >> 6;
 		state = (packet[0] & 0x80) >> 7;
 
-		if ((id >= 1) && (id <= info->key_num)) {
-			if (type == 0) {
-				//Key event
+		if (type == 0) {
+			if ((id >= 1) && (id <= info->key_num)) {
+				//Key event				
 				keycode = info->key_code[id - 1];
 
 				input_report_key(info->input_dev, keycode, state);
-				dev_info(&info->client->dev, "%s - Key : ID[%d] Code[%d] Event[%d] Strength[%d]\n", __func__, id, keycode, state, strength);
-//				dev_info(&info->client->dev, "%s - Key : ID[%d] Code[%d] Event[%d]\n", __func__, id, keycode, state);
-			} else if (type == 1) {
-				//Grip event
-
-				//Do something ...
-				dev_info(&info->client->dev, "%s - Grip : ID[%d] Event[%d] Strength[%d]\n", __func__, id, state, strength);
-//				dev_dbg(&info->client->dev, "%s - Grip : ID[%d] Event[%d]\n", __func__, id, state);
+#ifdef CONFIG_SAMSUNG_PRODUCT_SHIP				
+				input_info(true, &info->client->dev, "%s - Key : Event[%d] ver 0x%02x%02x\n",
+							__func__, state, info->fw_version[6], info->fw_version[7]);
+#else
+				input_info(true, &info->client->dev, "%s - Key : Code[%d] Event[%d] Strength[%d] ver 0x%02x%02x\n",
+							__func__, keycode, state, strength, info->fw_version[6], info->fw_version[7]);
+#endif
+#ifdef CONFIG_SEC_FACTORY
+				if(info->irq_checked){
+					info->irq_key_count[id-1]++;
+				}
+#endif			
 			} else {
-				dev_err(&info->client->dev, "%s [ERROR] Unknown input type [%d]\n", __func__, type);
+				input_err(true, &info->client->dev, "%s [ERROR] Unknown Key ID [%d]\n", __func__, id);
 				continue;
 			}
-		} else {
-			dev_err(&info->client->dev, "%s [ERROR] Unknown Key ID [%d]\n", __func__, id);
+		}
+#ifdef CONFIG_TOUCHKEY_GRIP
+		else if (type == 1) { /*Grip event*/
+			input_report_key(info->input_dev, KEY_CP_GRIP, state);
+			info->grip_event = state;
+			input_info(true, &info->client->dev,
+				"%s - Grip : ID[%d] Event[%d] Strength[%d]\n",
+				__func__, id, state, strength);
+#ifdef CONFIG_SEC_FACTORY
+			if(info->abnormal_mode){
+				if(info->grip_event ){
+					if (mip4_tk_get_image(info, MIP_IMG_TYPE_INTENSITY)) {
+						input_err(true,&info->client->dev, "%s [ERROR] mip_get_image\n", __func__);
+						continue;
+					}
+					info->diff = info->image_buf[2];
+
+					if(info->max_diff < info->diff)
+						info->max_diff = info->diff;
+					info->irq_count++;
+				}
+			}
+#endif
+		}
+#endif			
+		else {
+			input_err(true, &info->client->dev,
+				"%s [ERROR] Unknown input type [%d]\n",
+				__func__, type);
 			continue;
 		}
 	}
 
 	input_sync(info->input_dev);
 
-	dev_dbg(&info->client->dev, "%s [DONE]\n", __func__);
 	return;
 
 ERROR:
-	dev_err(&info->client->dev, "%s [ERROR]\n", __func__);
+	input_err(true, &info->client->dev, "%s [ERROR]\n", __func__);
 	return;
 }
 
@@ -216,18 +241,28 @@ int mip4_tk_parse_devicetree(struct device *dev, struct mip4_tk_info *info)
 	/* Get number of keys */
 	ret = of_property_read_u32(np, MIP_DEV_NAME",keynum", &val);
 	if (ret)
-		dev_err(dev,
+		input_err(true, dev,
 			"%s [ERROR] of_property_read_u32 : keynum\n",
 			__func__);
 	else
 		info->key_num = val;
+
+#ifdef CONFIG_TOUCHKEY_GRIP
+	ret = of_property_read_u32(np, MIP_DEV_NAME",grip_ch", &val);
+	if (ret)
+		input_err(true, dev,
+			"%s [ERROR] of_property_read_u32 : grip_ch\n",
+			__func__);
+	else
+		info->grip_ch = val;
+#endif
 
 	/* Get key code */
 	ret = of_property_read_u32_array(
 				np, MIP_DEV_NAME",keycode",
 				info->key_code, info->key_num);
 	if (ret) {
-		dev_err(dev,
+		input_err(true, dev,
 			"%s [ERROR] of_property_read_u32_array : keycode\n",
 			__func__);
 		info->key_code_loaded = false;
@@ -235,25 +270,42 @@ int mip4_tk_parse_devicetree(struct device *dev, struct mip4_tk_info *info)
 		info->key_code_loaded = true;
 	}
 
+	info->boot_on_ldo = of_property_read_bool(np, MIP_DEV_NAME",boot-on-ldo");
+
 	ret = of_property_read_string(np, MIP_DEV_NAME",pwr-reg-name", &name);
-	if (ret)
+	if (ret) {
+		input_err(true, dev,
+			"%s [ERROR] of_property_read_string : pwr-reg-name\n",
+			__func__);
 		pdata->pwr_reg_name = NULL;
-	else
+	} else {
 		pdata->pwr_reg_name = name;
-	dev_err(dev,
-			"%s pwr_reg_name %s\n",
-			__func__, pdata->pwr_reg_name);
+	}
 
 	ret = of_property_read_string(np, MIP_DEV_NAME",bus-reg-name", &name);
-	if (ret)
+	if (ret) {
+		input_err(true, dev,
+			"%s [ERROR] of_property_read_string : bus-reg-name\n",
+			__func__);
 		pdata->bus_reg_name = NULL;
-	else
+	} else {
 		pdata->bus_reg_name = name;
+	}
+
+	ret = of_property_read_string(np, MIP_DEV_NAME",firmware-name", &name);
+	if (ret) {
+		input_err(true, dev,
+			"%s [ERROR] of_property_read_string : firmware-name\n",
+			__func__);
+		pdata->firmware_name = NULL;
+	} else {
+		pdata->firmware_name = name;
+	}
 
 	/* Get GPIO for irq */
 	val = of_get_named_gpio(np, MIP_DEV_NAME",irq-gpio", 0);
 	if (!gpio_is_valid(val)) {
-		dev_err(dev,
+		input_err(true, dev,
 			"%s [ERROR] of_get_named_gpio : irq-gpio\n",
 			__func__);
 		ret = -EINVAL;
@@ -264,22 +316,30 @@ int mip4_tk_parse_devicetree(struct device *dev, struct mip4_tk_info *info)
 
 	/* Get GPIO for pwr*/
 	val = of_get_named_gpio(np, MIP_DEV_NAME",pwr-en-gpio", 0);
-	if (!gpio_is_valid(val))
+	if (!gpio_is_valid(val)) {
+		input_err(true, dev,
+			"%s [ERROR] of_get_named_gpio : pwr-en-gpio\n",
+			__func__);
 		pdata->gpio_pwr_en = 0;
-	else
+	} else {
 		pdata->gpio_pwr_en = val;
+	}
 
 	/* Get GPIO I2C*/
 	val = of_get_named_gpio(np, MIP_DEV_NAME",bus-en-gpio", 0);
-	if (!gpio_is_valid(val))
+	if (!gpio_is_valid(val)) {
+		input_err(true, dev,
+			"%s [ERROR] of_get_named_gpio : bus-en-gpio\n",
+			__func__);
 		pdata->gpio_bus_en = 0;
-	else
+	} else {
 		pdata->gpio_bus_en = val;
+	}
 
 	/* Config GPIO for irq */
 	ret = gpio_request(pdata->gpio_intr, "irq-gpio");
 	if (ret) {
-		dev_err(dev, "%s [ERROR] gpio_request : irq-gpio\n", __func__);
+		input_err(true, dev, "%s [ERROR] gpio_request : irq-gpio\n", __func__);
 		goto error;
 	}
 	gpio_direction_input(pdata->gpio_intr);
@@ -289,7 +349,7 @@ int mip4_tk_parse_devicetree(struct device *dev, struct mip4_tk_info *info)
 	if (pdata->gpio_pwr_en) {
 		ret = devm_gpio_request(dev, pdata->gpio_pwr_en, "pwr-en-gpio");
 		if (ret) {
-			dev_err(dev,
+			input_err(true, dev,
 				"%s [ERROR] gpio_request : pwr-en-gpio\n",
 				__func__);
 			goto error;
@@ -301,7 +361,7 @@ int mip4_tk_parse_devicetree(struct device *dev, struct mip4_tk_info *info)
 	if (pdata->gpio_bus_en) {
 		ret = devm_gpio_request(dev, pdata->gpio_bus_en, "bus-en-gpio");
 		if (ret) {
-			dev_err(dev,
+			input_err(true, dev,
 				"%s [ERROR] gpio_request : bus-en-gpio\n",
 				__func__);
 			goto error;
@@ -341,7 +401,11 @@ void mip4_tk_config_input(struct mip4_tk_info *info)
 	for(i = 0; i < info->key_num; i++)
 		set_bit(info->key_code[i], input_dev->keybit);
 
-	dev_info(&info->client->dev, "%s [DONE]\n", __func__);
+#ifdef CONFIG_TOUCHKEY_GRIP
+	set_bit(KEY_CP_GRIP, input_dev->keybit);
+#endif	
+
+	input_info(true, &info->client->dev, "%s [DONE]\n", __func__);
 
 	return;
 }
@@ -354,13 +418,13 @@ void mip4_tk_callback_charger(struct mip4_tk_callbacks *cb, int charger_status)
 {
 	struct mip4_tk_info *info = container_of(cb, struct mip4_tk_info, callbacks);
 
-	dev_dbg(&info->client->dev, "%s [START]\n", __func__);
+	input_dbg(true, &info->client->dev, "%s [START]\n", __func__);
 
-	dev_info(&info->client->dev, "%s - charger_status[%d]\n", __func__, charger_status);
+	input_info(true, &info->client->dev, "%s - charger_status[%d]\n", __func__, charger_status);
 
 	/* ... */
 
-	dev_dbg(&info->client->dev, "%s [DONE]\n", __func__);
+	input_dbg(true, &info->client->dev, "%s [DONE]\n", __func__);
 }
 
 /*
@@ -368,7 +432,7 @@ void mip4_tk_callback_charger(struct mip4_tk_callbacks *cb, int charger_status)
  */
 void mip4_tk_config_callback(struct mip4_tk_info *info)
 {
-	dev_dbg(&info->client->dev, "%s [START]\n", __func__);
+	input_dbg(true, &info->client->dev, "%s [START]\n", __func__);
 
 	info->register_callback = info->pdata->register_callback;
 
@@ -381,7 +445,7 @@ void mip4_tk_config_callback(struct mip4_tk_info *info)
 		info->register_callback(&info->callbacks);
 	}
 
-	dev_dbg(&info->client->dev, "%s [DONE]\n", __func__);
+	input_dbg(true, &info->client->dev, "%s [DONE]\n", __func__);
 	return;
 }
 #endif

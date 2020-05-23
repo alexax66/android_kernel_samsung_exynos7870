@@ -45,6 +45,7 @@ extern int cnss_wlan_query_oob_status(void);
 extern int cnss_wlan_get_pending_irq(void);
 extern int cnss_update_boarddata(unsigned char *buf, unsigned int len);
 extern int cnss_cache_boarddata(const unsigned char *buf, unsigned int len, unsigned int offset);
-extern void cnss_get_monotonic_boottime(struct timespec *ts); 
+extern void cnss_get_monotonic_boottime(struct timespec *ts);
+extern void cnss_wlan_irq_poll(void);
 
 #endif /* _CNSS_H_ */

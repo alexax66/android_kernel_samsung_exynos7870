@@ -6893,6 +6893,18 @@ static ssize_t cmd_store(struct device *dev, struct device_attribute *attr,
 		return count;
 	}
 
+	if (strlen(buf) >= CMD_STR_LEN) {		
+		dev_err(rmi4_data->pdev->dev.parent, "%s: cmd length(strlen(buf)) is over (%s,%d)!!\n",
+			__func__, buf, (int)strlen(buf));
+		return count;
+	}
+
+	if (count >= (unsigned int)CMD_STR_LEN) {		
+		dev_err(rmi4_data->pdev->dev.parent, "%s: cmd length(count) is over (%s,%d)!!\n",
+			__func__, buf, (unsigned int)count);
+		return count;
+	}
+
 	mutex_lock(&data->cmd_lock);
 	data->cmd_is_running = true;
 	mutex_unlock(&data->cmd_lock);
@@ -6961,7 +6973,7 @@ static ssize_t cmd_store(struct device *dev, struct device_attribute *attr,
 			}
 
 			pos++;
-		} while (pos - buf <= length);
+		} while ((pos - buf <= length) && (param_cnt < CMD_PARAM_NUM));
 	}
 
 	dev_info(rmi4_data->pdev->dev.parent, "%s: Command = %s", __func__, buf);

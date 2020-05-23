@@ -69,6 +69,7 @@ extern int decon_log_level;
 #define DRM_DEV_DECON		3
 #define DECON_CFW_OFFSET	3
 
+#define MAX_FRM_DONE_WAIT	34
 
 #define EVT_TYPE_INT			BIT(31)
 #define EVT_TYPE_IOCTL			BIT(30)
@@ -88,7 +89,7 @@ extern int decon_log_level;
 #define decon_win_update_dbg(fmt, ...)					\
 	do {								\
 		if (decon_log_level >= DECON_LOG_LEVEL_DBG)				\
-			pr_info(pr_fmt(fmt), ##__VA_ARGS__);		\
+			pr_info(pr_fmt("decon:" fmt), ##__VA_ARGS__);		\
 	} while (0)
 #else
 #define decon_win_update_dbg(fmt, ...) (while (0))
@@ -97,25 +98,25 @@ extern int decon_log_level;
 #define decon_err(fmt, ...)							\
 	do {									\
 		if (decon_log_level >= DECON_LOG_LEVEL_ERR)					\
-			pr_err(pr_fmt(fmt), ##__VA_ARGS__);			\
+			pr_err(pr_fmt("decon:" fmt), ##__VA_ARGS__);			\
 	} while (0)
 
 #define decon_warn(fmt, ...)							\
 	do {									\
 		if (decon_log_level >= DECON_LOG_LEVEL_WARN)					\
-			pr_warn(pr_fmt(fmt), ##__VA_ARGS__);			\
+			pr_warn(pr_fmt("decon:" fmt), ##__VA_ARGS__);			\
 	} while (0)
 
 #define decon_info(fmt, ...)							\
 	do {									\
 		if (decon_log_level >= DECON_LOG_LEVEL_INFO)					\
-			pr_info(pr_fmt(fmt), ##__VA_ARGS__);			\
+			pr_info(pr_fmt("decon:" fmt), ##__VA_ARGS__);			\
 	} while (0)
 
 #define decon_dbg(fmt, ...)							\
 	do {									\
 		if (decon_log_level >= DECON_LOG_LEVEL_DBG)					\
-			pr_info(pr_fmt(fmt), ##__VA_ARGS__);			\
+			pr_info(pr_fmt("decon:" fmt), ##__VA_ARGS__);			\
 	} while (0)
 
 /*
@@ -459,23 +460,6 @@ struct decon_underrun_stat {
 	unsigned long used_windows;
 };
 
-struct esd_protect {
-	u32 pcd_irq;
-	u32 err_irq;
-	u32 det_irq;
-	u32 pcd_gpio;
-	u32 err_gpio;
-	u32 det_gpio;
-	int pcd_pin_active;
-	int err_pin_active;
-	int det_pin_active;
-	u32 err_count;
-	u32 det_count;
-	struct workqueue_struct *esd_wq;
-	struct work_struct esd_work;
-	u32	queuework_pending;
-};
-
 #ifdef CONFIG_DECON_EVENT_LOG
 
 #define DEFAULT_BASE_IDX	(-1)
@@ -503,12 +487,12 @@ typedef enum disp_ss_event_type {
 	DISP_EVT_DECON_FRAMEDONE,
 	DISP_EVT_DSIM_FRAMEDONE,
 	DISP_EVT_UPDATE_TIMEOUT,
-	DISP_EVT_LINECNT_TIMEOUT,
 
 	/* Related with async event */
 	DISP_EVT_UPDATE_HANDLER = EVT_TYPE_ASYNC_EVT,
 	DISP_EVT_DSIM_COMMAND,
 	DISP_EVT_TRIG_MASK,
+	DISP_EVT_TRIG_UNMASK,
 	DISP_EVT_DECON_FRAMEDONE_WAIT,
 	DISP_EVT_LINECNT_ZERO,
 	DISP_EVT_SIZE_ERR,
@@ -627,6 +611,105 @@ void DISP_SS_EVENT_SIZE_ERR_LOG(struct v4l2_subdev *sd, struct disp_ss_size_info
 * END of CONFIG_DECON_EVENT_LOG
 */
 
+enum {
+	DISP_DUMP_DECON_UNDERRUN,
+	DISP_DUMP_LINECNT_ZERO,
+	DISP_DUMP_VSYNC_TIMEOUT,
+	DISP_DUMP_VSTATUS_TIMEOUT,
+	DISP_DUMP_COMMAND_WR_TIMEOUT,
+	DISP_DUMP_COMMAND_RD_ERROR,
+	DISP_DUMP_MAX
+};
+
+void decon_dump(struct decon_device *decon);
+#if defined(CONFIG_DECON_EVENT_LOG) && defined(CONFIG_DEBUG_LIST)	/* ENG */
+void DISP_SS_DUMP(u32 type);
+#else
+#define DISP_SS_DUMP(...)
+#endif
+
+#define ABD_EVENT_LOG_MAX	50
+#define ABD_LOG_MAX		10
+
+struct abd_event_log {
+	u64 stamp;
+	const char *print;
+};
+
+struct abd_event {
+	struct abd_event_log log[ABD_EVENT_LOG_MAX];
+	atomic_t log_idx;
+};
+
+struct abd_log {
+	u64 stamp;
+
+	unsigned int level;
+	unsigned int state;
+	unsigned int onoff;
+
+	unsigned int winid;
+	struct sync_fence fence;
+
+	unsigned int frm_status;
+	unsigned long mif;
+	unsigned long iint;
+	unsigned long disp;
+};
+
+struct abd_trace {
+	const char *name;
+	unsigned int count;
+	unsigned int lcdon_flag;
+	struct abd_log log[ABD_LOG_MAX];
+};
+
+struct abd_pin {
+	const char *name;
+	unsigned int irq;
+	struct irq_desc *desc;
+	int gpio;
+	int level;
+	int active_level;
+
+	struct abd_trace p_first;
+	struct abd_trace p_lcdon;
+	struct abd_trace p_event;
+
+	irq_handler_t	handler;
+	void		*dev_id;
+};
+
+enum {
+	ABD_PIN_PCD,
+	ABD_PIN_DET,
+	ABD_PIN_ERR,
+	ABD_PIN_MAX
+};
+
+struct abd_protect {
+	struct abd_pin pin[ABD_PIN_MAX];
+	struct abd_event event;
+
+	struct abd_trace f_first;
+	struct abd_trace f_lcdon;
+	struct abd_trace f_event;
+
+	struct abd_trace u_first;
+	struct abd_trace u_lcdon;
+	struct abd_trace u_event;
+
+	unsigned int irq_enable;
+	struct notifier_block reboot_notifier;
+	spinlock_t slock;
+};
+
+void decon_abd_enable(struct decon_device *decon, int enable);
+int decon_abd_register(struct decon_device *decon);
+void decon_abd_save_log_fto(struct abd_protect *abd, struct sync_fence *fence);
+int decon_abd_register_pin_handler(int irq, irq_handler_t handler, void *dev_id);
+void decon_abd_save_log_event(struct abd_protect *abd, const char *print);
+
 struct decon_device {
 	void __iomem			*regs;
 	struct device			*dev;
@@ -707,8 +790,24 @@ struct decon_device {
 	struct decon_regs_data win_regs;
 
 	bool				ignore_vsync;
-	struct esd_protect		esd;
+	struct abd_protect	abd;
+
 	unsigned int			force_fullupdate;
+#ifdef CONFIG_LCD_DOZE_MODE
+	unsigned int			doze_state;
+	unsigned int			pwr_mode;
+#endif
+	unsigned int			disp_dump;
+
+	int systrace_pid;
+	void	(*tracing_mark_write)( int pid, char id, char* str1, int value);
+
+	int 			update_regs_list_cnt;
+
+#if defined(CONFIG_EXYNOS_SUPPORT_FB_HANDOVER)
+	bool				fst_frame;
+#endif
+	bool				fb_reservation;
 };
 
 static inline struct decon_device *get_decon_drvdata(u32 id)
@@ -765,6 +864,9 @@ int decon_disable(struct decon_device *decon);
 void decon_lpd_enable(void);
 int decon_wait_for_vsync(struct decon_device *decon, u32 timeout);
 
+/* TUI function API */
+int decon_tui_protection(struct decon_device *decon, bool tui_en);
+
 /* internal only function API */
 int decon_fb_config_eint_for_te(struct platform_device *pdev, struct decon_device *decon);
 int decon_int_create_vsync_thread(struct decon_device *decon);
@@ -793,6 +895,10 @@ void decon_reg_set_block_mode(u32 id, u32 win_idx, u32 x, u32 y, u32 h, u32 w, u
 void decon_reg_set_tui_va(u32 id, u32 va);
 void decon_set_qos(struct decon_device *decon, struct decon_reg_data *regs,
 			bool is_after, bool is_default_qos);
+
+#if defined(CONFIG_EXYNOS_SUPPORT_FB_HANDOVER)
+void decon_fb_handover_color_map(struct decon_device *decon);
+#endif
 
 /* LPD related */
 static inline void decon_lpd_block(struct decon_device *decon)
@@ -877,5 +983,25 @@ static inline bool is_any_pending_frames(struct decon_device *decon)
 
 #define DECON_IOC_LPD_EXIT_LOCK		_IOW('L', 0, u32)
 #define DECON_IOC_LPD_UNLOCK		_IOW('L', 1, u32)
+
+#ifdef CONFIG_LCD_DOZE_MODE
+#define S3CFB_POWER_MODE		_IOW('F', 223, __u32)
+
+enum decon_pwr_mode {
+	DECON_POWER_MODE_OFF,
+	DECON_POWER_MODE_DOZE,
+	DECON_POWER_MODE_NORMAL,
+	DECON_POWER_MODE_DOZE_SUSPEND
+};
+
+enum doze_state {
+	DOZE_STATE_NORMAL,
+	DOZE_STATE_DOZE,
+	DOZE_STATE_SUSPEND,
+	DOZE_STATE_DOZE_SUSPEND
+};
+
+#define IS_DOZE(doze_state)		(doze_state == DOZE_STATE_DOZE || doze_state == DOZE_STATE_DOZE_SUSPEND)
+#endif
 
 #endif /* ___SAMSUNG_DECON_H__ */

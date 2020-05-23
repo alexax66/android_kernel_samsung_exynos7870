@@ -92,5 +92,15 @@ config FREE_CP_RSVD_MEMORY
 	bool "Free CP reserved memory after CP goes to sleep for Wifi model"
 	depends on LINK_DEVICE_SHMEM
 	default n
+
+config MODEM_IF_QOS
+	bool "Implement QoS"
+	depends on LINK_DEVICE_SHMEM
+	default n
+
+config MODEM_PIE_REV
+	bool "Android 9.0 Bootloader/Modem Support"
+	default n
+
 endmenu
 endif

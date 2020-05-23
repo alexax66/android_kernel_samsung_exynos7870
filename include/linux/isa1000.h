@@ -22,7 +22,10 @@
  	u32 period;
  	u32 max_timeout;
  	u32 pwm_id;
+ 	u32 pwm_use;
  	int gpio_en;
+	int min_value;
+	int min_intensity;
 	const char* regulator_name;
  };
 

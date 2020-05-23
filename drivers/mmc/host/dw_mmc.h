@@ -66,6 +66,7 @@
 #define SDMMC_BUFADDR		0x098
 #define SDMMC_RESP_TAT		0x0AC
 #define SDMMC_CDTHRCTL		0x100
+#define SDMMC_EMMC_DDR_REG	0x10C
 #define SDMMC_DATA(x)		(x)
 
 /*
@@ -240,6 +241,7 @@ enum dw_mci_misc_control {
 	CTRL_REQUEST_EXT_IRQ,
 	CTRL_CHECK_CD,
 	CTRL_SET_ETC_GPIO,
+	CTRL_ADD_SYSFS,
 };
 
 #define SDMMC_DATA_TMOUT_SHIFT		11
@@ -333,8 +335,8 @@ struct dw_mci_sfe_ram_dump {
 	u32			mpsctrl;
 	u32			cmd_status;
 	u32			data_status;
-	u32			pending_events;
-	u32			completed_events;
+	unsigned long		pending_events;
+	unsigned long		completed_events;
 	u32			host_state;
 	u32			cmd_index;
 	u32			fifo_count;

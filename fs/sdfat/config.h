@@ -12,9 +12,7 @@
  *  GNU General Public License for more details.
  *
  *  You should have received a copy of the GNU General Public License
- *  along with this program; if not, write to the Free Software
- *  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,
- *  MA  02110-1301, USA.
+ *  along with this program; if not, see <http://www.gnu.org/licenses/>.
  */
 
 #ifndef _SDFAT_CONFIG_H
@@ -65,7 +63,7 @@
 #ifndef CONFIG_SDFAT_FAT32_SHORTNAME_SEQ /* Shortname ~1, ... ~9 have higher
 					  * priority (WIN32/VFAT-like)
 					  */
-//#define CONFIG_SDFAT_FAT32_SHORTNAME_SEQ 	
+//#define CONFIG_SDFAT_FAT32_SHORTNAME_SEQ
 #endif
 
 #ifndef CONFIG_SDFAT_ALIGNED_MPAGE_WRITE
@@ -78,6 +76,10 @@
 
 #ifndef CONFIG_SDFAT_DELAYED_META_DIRTY
 //#define CONFIG_SDFAT_DELAYED_META_DIRTY /* delayed DIR/FAT dirty support */
+#endif
+
+#ifndef CONFIG_SDFAT_SUPPORT_DIR_SYNC
+//#define CONFIG_SDFAT_SUPPORT_DIR_SYNC /* support DIR_SYNC */
 #endif
 
 #ifndef CONFIG_SDFAT_CHECK_RO_ATTR
@@ -97,7 +99,7 @@
 #endif
 
 #ifndef CONFIG_SDFAT_VIRTUAL_XATTR
-#define CONFIG_SDFAT_VIRTUAL_XATTR
+//#define CONFIG_SDFAT_VIRTUAL_XATTR
 #endif
 
 #ifndef CONFIG_SDFAT_SUPPORT_STLOG
@@ -110,7 +112,7 @@
 
 #ifndef CONFIG_SDFAT_DBG_IOCTL
 //#define CONFIG_SDFAT_DBG_IOCTL
-#endif 
+#endif
 
 #ifndef CONFIG_SDFAT_DBG_MSG
 //#define CONFIG_SDFAT_DBG_MSG
@@ -121,7 +123,7 @@
 #endif
 
 #ifndef CONFIG_SDFAT_DBG_BUGON
-#define CONFIG_SDFAT_DBG_BUGON
+//#define CONFIG_SDFAT_DBG_BUGON
 #endif
 
 #ifndef CONFIG_SDFAT_DBG_WARNON

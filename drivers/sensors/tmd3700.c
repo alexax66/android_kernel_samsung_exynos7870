@@ -57,9 +57,13 @@
 #define MODULE_NAME_LIGHT  "light_sensor"
 
 #define VENDOR_NAME     "TAOS"
+#ifdef CONFIG_SENSORS_TMD3725
+#define CHIP_NAME       "TMD3725"
+#define CHIP_ID         0xE4
+#else
 #define CHIP_NAME       "TMD3700"
 #define CHIP_ID         0xC0
-
+#endif
 #define RETRY_REBOOT    3
 
 /*lightsnesor log time 6SEC 200mec X 30*/
@@ -1791,9 +1795,10 @@ static int taos_parse_dt(struct device *dev, struct taos_platform_data *pdata)
 		if (ret < 0) {
 			SENSOR_ERR("gpio %d request failed (%d)\n",
 				pdata->vled_ldo, ret);
-			return ret;
-		} else
+			pdata->vled_ldo = 0;
+		} else {
 			gpio_direction_output(pdata->vled_ldo, 0);
+		}
 	}
 
 	pdata->als_int = of_get_named_gpio_flags(np, "taos,irq_gpio", 0,
@@ -1945,7 +1950,7 @@ sreboot:
 		SENSOR_ERR("could not register input device\n");
 		goto err_input_register_device_proximity;
 	}
-	ret = sensors_register(taos->proximity_dev, taos, prox_sensor_attrs,
+	ret = sensors_register(&taos->proximity_dev, taos, prox_sensor_attrs,
 		MODULE_NAME_PROX); /* factory attributs */
 	if (ret < 0) {
 		SENSOR_ERR("could not registersensors_register\n");
@@ -2013,7 +2018,7 @@ sreboot:
 		SENSOR_ERR("could not register input device\n");
 		goto err_input_register_device_light;
 	}
-	ret = sensors_register(taos->light_dev, taos,
+	ret = sensors_register(&taos->light_dev, taos,
 		lightsensor_additional_attributes, MODULE_NAME_LIGHT);
 	if (ret < 0) {
 		SENSOR_ERR("cound not register light sensor device(%d)\n",

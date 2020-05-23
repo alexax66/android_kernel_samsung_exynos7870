@@ -34,6 +34,7 @@
 #include <linux/of_gpio.h>
 #include <linux/of.h>
 #include <linux/serial_s3c.h>
+#include <soc/samsung/exynos-powermode.h>
 
 //#include <../../arch/arm/include/asm/mach-types.h>
 
@@ -43,6 +44,9 @@
 #define BT_LPM_ENABLE
 
 #define BT_UPORT 0
+
+#define STATUS_IDLE	1
+#define STATUS_BUSY	0
 
 extern s3c_wake_peer_t s3c2410_serial_wake_peer[CONFIG_SERIAL_SAMSUNG_UARTS];
 
@@ -69,15 +73,91 @@ struct bcm_bt_gpio {
 	int bt_wake;
 	int bt_hostwake;
 	int irq;
+#ifdef CONFIG_FM_LNA
+	int lna_en;
+#endif
+#ifdef CONFIG_FM_DTV_CTRL
+	int fm_dtv_ctrl_1;
+	int fm_dtv_ctrl_2;
+#endif
 } bt_gpio;
 
-int bt_is_running=0;
+int idle_ip_index;
 
-int check_bt_op(void)
+#ifdef CONFIG_FM_LNA
+static ssize_t lna_state_show(struct device *dev, struct device_attribute *attr,
+		char *buf)
 {
-	return bt_is_running;
+	return sprintf(buf, "%d\n", gpio_get_value(bt_gpio.lna_en));
 }
-EXPORT_SYMBOL(check_bt_op);
+
+static ssize_t lna_state_store(struct device *dev, struct device_attribute *attr,
+		const char *buf, size_t count)
+{
+	int state;
+
+	if (kstrtoint(buf, 10, &state)){
+		pr_err("[BT] fm_lna_state_store buf error\n");
+		return count;
+	}
+
+	pr_info("[BT] fm_lna_state_store value = %d\n", state);
+	gpio_set_value(bt_gpio.lna_en, state);
+
+	return count;
+}
+static DEVICE_ATTR(lna_en, 0664, lna_state_show, lna_state_store);
+#endif
+
+#ifdef CONFIG_FM_DTV_CTRL
+static ssize_t dtv_ctrl_state_show(struct device *dev, struct device_attribute *attr,
+		char *buf)
+{
+	int fm_dtv_ctrl_1, fm_dtv_ctrl_2;
+
+	fm_dtv_ctrl_1 = gpio_get_value(bt_gpio.fm_dtv_ctrl_1);
+	fm_dtv_ctrl_2 = gpio_get_value(bt_gpio.fm_dtv_ctrl_2);
+
+	return sprintf(buf, "%d\n", (fm_dtv_ctrl_1 << 1) + fm_dtv_ctrl_2);
+}
+
+static ssize_t dtv_ctrl_state_store(struct device *dev, struct device_attribute *attr,
+		const char *buf, size_t count)
+{
+	int state;
+
+	if (kstrtoint(buf, 10, &state)){
+		pr_err("[BT] dtv_ctrl_state_store buf error\n");
+		return count;
+	}
+
+	pr_info("[BT] dtv_ctrl_state_store value = %d\n", state);
+	switch(state){
+	case 0:
+		gpio_set_value(bt_gpio.fm_dtv_ctrl_1, 0);
+		gpio_set_value(bt_gpio.fm_dtv_ctrl_2, 0);
+		break;
+	case 1:
+		gpio_set_value(bt_gpio.fm_dtv_ctrl_1, 0);
+		gpio_set_value(bt_gpio.fm_dtv_ctrl_2, 1);
+		break;
+	case 2:
+		gpio_set_value(bt_gpio.fm_dtv_ctrl_1, 1);
+		gpio_set_value(bt_gpio.fm_dtv_ctrl_2, 0);
+		break;
+	case 3:
+		gpio_set_value(bt_gpio.fm_dtv_ctrl_1, 1);
+		gpio_set_value(bt_gpio.fm_dtv_ctrl_2, 1);
+		break;
+	default:
+		pr_err("[BT] value not supported = %d\n", state);
+		break;
+	};
+
+	return count;
+}
+static DEVICE_ATTR(fm_dtv_ctrl, 0660, dtv_ctrl_state_show, dtv_ctrl_state_store);
+#endif
 
 static int bcm43xx_bt_rfkill_set_power(void *data, bool blocked)
 {
@@ -96,7 +176,8 @@ static int bcm43xx_bt_rfkill_set_power(void *data, bool blocked)
 		gpio_set_value(bt_gpio.bt_wake, 1);
 #endif
 		gpio_set_value(bt_gpio.bt_en, 1);
-		bt_is_running = 1;
+		exynos_update_ip_idle_status(idle_ip_index, STATUS_BUSY);
+
 		msleep(100);
 
 	} else {
@@ -108,7 +189,8 @@ static int bcm43xx_bt_rfkill_set_power(void *data, bool blocked)
 			return -1;
 		}
 #endif
-		bt_is_running = 0;
+
+		exynos_update_ip_idle_status(idle_ip_index, STATUS_IDLE);
 		gpio_set_value(bt_gpio.bt_en, 0);
 	}
 	return 0;
@@ -154,7 +236,8 @@ static enum hrtimer_restart enter_lpm(struct hrtimer *timer)
 	if (bt_lpm.uport != NULL)
 		set_wake_locked(0);
 
-	bt_is_running = 0;
+    if (bt_lpm.host_wake == 0)
+	    exynos_update_ip_idle_status(idle_ip_index, STATUS_IDLE);
 
 	wake_lock_timeout(&bt_lpm.bt_wake_lock, HZ/2);
 
@@ -166,7 +249,8 @@ void bcm_bt_lpm_exit_lpm_locked(struct uart_port *uport)
 	bt_lpm.uport = uport;
 
 	hrtimer_try_to_cancel(&bt_lpm.enter_lpm_timer);
-	bt_is_running = 1;
+
+	exynos_update_ip_idle_status(idle_ip_index, STATUS_BUSY);
 	set_wake_locked(1);
 
 //	pr_info("[BT] bcm_bt_lpm_exit_lpm_locked\n");
@@ -181,9 +265,8 @@ static void update_host_wake_locked(int host_wake)
 
 	bt_lpm.host_wake = host_wake;
 
-	bt_is_running = 1;
-
 	if (host_wake) {
+		exynos_update_ip_idle_status(idle_ip_index, STATUS_BUSY);
 		wake_lock(&bt_lpm.host_wake_lock);
 	} else  {
 		/* Take a timed wakelock, so that upper layers can take it.
@@ -192,6 +275,9 @@ static void update_host_wake_locked(int host_wake)
 		 */
 		pr_info("[BT] update_host_wake_locked host_wake is deasserted. release wakelock in 1s\n");
 		wake_lock_timeout(&bt_lpm.host_wake_lock, HZ);
+
+		if (bt_lpm.dev_wake == 0)
+			exynos_update_ip_idle_status(idle_ip_index, STATUS_IDLE);
 	}
 }
 
@@ -309,7 +395,48 @@ static int bcm43xx_bluetooth_probe(struct platform_device *pdev)
 		gpio_free(bt_gpio.bt_en);
 		return rc;
 	}
+#ifdef CONFIG_FM_LNA
+	ret = device_create_file(&pdev->dev, &dev_attr_lna_en);
+	if (ret != 0) {
+		pr_err("[BT] Failed to create lna_en sysfs files: %d\n", ret);
+		return ret;
+	}
 
+	bt_gpio.lna_en = of_get_named_gpio(pdev->dev.of_node, "fm-lna-en", 0);
+
+	rc = gpio_request(bt_gpio.lna_en, "fmlnaen_gpio");
+	if (rc < 0)
+		pr_err("[BT] can not find the fm-lna-en in the dt\n");
+	else
+		pr_info("[BT] fm-lna-en = %d\n", bt_gpio.lna_en);
+
+	gpio_direction_output(bt_gpio.lna_en, 0);
+#endif
+#ifdef CONFIG_FM_DTV_CTRL
+	ret = device_create_file(&pdev->dev, &dev_attr_fm_dtv_ctrl);
+	if (ret != 0) {
+		pr_err("[BT] Failed to create dtv_ctrl sysfs files: %d\n", ret);
+		return ret;
+	}
+
+	bt_gpio.fm_dtv_ctrl_1 = of_get_named_gpio(pdev->dev.of_node, "fm-dtv-ctrl-1", 0);
+	bt_gpio.fm_dtv_ctrl_2 = of_get_named_gpio(pdev->dev.of_node, "fm-dtv-ctrl-2", 0);
+
+	rc = gpio_request(bt_gpio.fm_dtv_ctrl_1, "fmdtvctrl_1_gpio");
+	if (rc < 0)
+		pr_err("[BT] can not find the fm-dtv-ctrl in the dt\n");
+	else
+		pr_info("[BT] fm-dtv-ctrl = %d\n", bt_gpio.fm_dtv_ctrl_1);
+
+	rc = gpio_request(bt_gpio.fm_dtv_ctrl_2, "fmdtvctrl_2_gpio");
+	if (rc < 0)
+		pr_err("[BT] can not find the fm-dtv-ctrl in the dt\n");
+	else
+		pr_info("[BT] fm-dtv-ctrl = %d\n", bt_gpio.fm_dtv_ctrl_2);
+
+	gpio_direction_output(bt_gpio.fm_dtv_ctrl_1, 0);
+	gpio_direction_output(bt_gpio.fm_dtv_ctrl_2, 0);
+#endif
 	gpio_direction_input(bt_gpio.bt_hostwake);
 	gpio_direction_output(bt_gpio.bt_wake, 0);
 	gpio_direction_output(bt_gpio.bt_en, 0);
@@ -352,6 +479,9 @@ static int bcm43xx_bluetooth_probe(struct platform_device *pdev)
 		gpio_free(bt_gpio.bt_en);
 	}
 #endif
+	idle_ip_index = exynos_get_idle_ip_index("bluetooth");
+	exynos_update_ip_idle_status(idle_ip_index, STATUS_IDLE);
+
 	pr_info("[BT] bcm43xx_bluetooth_probe End \n");
 	return rc;
 }
@@ -367,7 +497,10 @@ static int bcm43xx_bluetooth_remove(struct platform_device *pdev)
 
 	wake_lock_destroy(&bt_lpm.host_wake_lock);
 	wake_lock_destroy(&bt_lpm.bt_wake_lock);
-
+#ifdef CONFIG_FM_LNA
+	gpio_free(bt_gpio.lna_en);
+	device_remove_file(&pdev->dev, &dev_attr_lna_en);
+#endif
 	return 0;
 }
 

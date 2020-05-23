@@ -346,57 +346,18 @@ struct synaptics_rmi4_f51_query {
 			unsigned char data_register_count;
 			unsigned char control_register_count;
 			unsigned char command_register_count;
-			unsigned char proximity_controls;
-			unsigned char proximity_controls_2;
 		};
-		unsigned char data[6];
+		unsigned char data[4];
 	};
 };
 
 struct synaptics_rmi4_f51_data {
 	union {
 		struct {
-			unsigned char finger_hover_det:1;
-			unsigned char air_swipe_det:1;
-			unsigned char large_obj_det:1;
-			unsigned char hover_pinch_det:1;
-			unsigned char lowg_detected:1;
-			unsigned char profile_handedness_status:2;
-			unsigned char face_detect:1;
-
-			unsigned char hover_finger_x_4__11;
-			unsigned char hover_finger_y_4__11;
-			unsigned char hover_finger_xy_0__3;
-			unsigned char hover_finger_z;
-		} __packed;
-		unsigned char proximity_data[5];
+			unsigned char temp_data;
+		};
+		unsigned char data[1];
 	};
-
-#ifdef EDGE_SWIPE
-	union {
-		struct {
-			unsigned char edge_swipe_x_lsb;
-			unsigned char edge_swipe_x_msb;
-			unsigned char edge_swipe_y_lsb;
-			unsigned char edge_swipe_y_msb;
-			unsigned char edge_swipe_z;
-			unsigned char edge_swipe_wx;
-			unsigned char edge_swipe_wy;
-			unsigned char edge_swipe_mm;
-			signed char edge_swipe_dg;
-		} __packed;
-		unsigned char edge_swipe_data[9];
-	};
-#endif
-#ifdef SIDE_TOUCH
-	union {
-		struct {
-			unsigned char side_button_leading;
-			unsigned char side_button_trailing;
-		} __packed;
-		unsigned char side_button_data[2];
-	};
-#endif
 };
 
 /*
@@ -1340,6 +1301,31 @@ struct f54_control_94 {
 	};
 };
 
+/* syna customized for sec 20160819 + */
+struct f54_control_95 {
+	union {
+		struct {
+			unsigned char freq_ctrl_00[11];
+			unsigned char freq_ctrl_01[11];
+			unsigned char freq_ctrl_02[11];
+			unsigned char freq_ctrl_03[11];
+			unsigned char freq_ctrl_04[11];
+			unsigned char freq_ctrl_05[11];
+			unsigned char freq_ctrl_06[11];
+			unsigned char freq_ctrl_07[11];	
+			unsigned char freq_ctrl_08[11];
+			unsigned char freq_ctrl_09[11];
+			unsigned char freq_ctrl_10[11];
+			unsigned char freq_ctrl_11[11];				
+		} __packed;
+		struct {
+			unsigned char data[132];
+			unsigned short address;
+		} __packed;
+	};
+};
+/* syna customized for sec 20160819 - */
+
 struct f54_control_96 {
 	union {
 		struct {
@@ -1457,6 +1443,7 @@ struct f54_control {
 	struct f54_control_88 *reg_88;
 	struct f54_control_91 *reg_91;
 	struct f54_control_94 *reg_94;
+	struct f54_control_95 *reg_95;	/* syna customized for sec 20160819 + */
 	struct f54_control_96 *reg_96;
     struct f54_control_99 *reg_99;
 	struct f54_control_110 *reg_110;

@@ -1037,6 +1037,40 @@ static int asv_get_tablever(void)
 	return (int)(asv_tbl_info.asv_table_ver);
 }
 
+#if defined(CONFIG_SEC_DEBUG)
+enum ids_info
+{
+	table_ver,
+	cpu_asv,
+	g3d_asv,
+	mif_asv
+};
+
+int asv_ids_information(enum ids_info id)
+{
+	int res = 0;
+
+	switch (id) {
+		case table_ver:
+			res = asv_tbl_info.asv_table_ver;
+			break;
+		case cpu_asv:
+			res = asv_tbl_info.cpucl0_asv_group;
+			break;
+		case g3d_asv:
+			res = asv_tbl_info.g3d_asv_group;
+			break;
+		case mif_asv:
+			res = asv_tbl_info.mif_asv_group;
+			break;
+		default:
+			break;
+	};
+
+	return res;
+}
+#endif /* CONFIG_SEC_DEBUG */
+
 struct cal_asv_ops cal_asv_ops = {
 	.print_asv_info = asv_print_info,
 	.print_rcc_info = rcc_print_info,

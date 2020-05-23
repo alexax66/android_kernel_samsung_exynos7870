@@ -52,6 +52,11 @@ struct cpufreq_interactive_cpuinfo {
 	u64 time_in_idle_timestamp;
 	u64 cputime_speedadj;
 	u64 cputime_speedadj_timestamp;
+#ifdef CONFIG_LOAD_BASED_CORE_CURRENT_CAL
+	unsigned int pre_cpu_for_load;
+	u64 curr_speed_total_time;
+	u64 curr_speed_idle_time;
+#endif
 	struct cpufreq_policy *policy;
 	struct cpufreq_frequency_table *freq_table;
 	spinlock_t target_freq_lock; /*protects target freq */
@@ -67,6 +72,8 @@ struct cpufreq_interactive_cpuinfo {
 
 static DEFINE_PER_CPU(struct cpufreq_interactive_cpuinfo, cpuinfo);
 
+#define TASK_NAME_LEN 15
+struct task_struct *speedchange_task;
 static cpumask_t speedchange_cpumask;
 static spinlock_t speedchange_cpumask_lock;
 static struct mutex gov_lock;
@@ -123,10 +130,6 @@ struct cpufreq_interactive_tunables {
 	int timer_slack_val;
 	bool io_is_busy;
 
-#define TASK_NAME_LEN 15
-	/* realtime thread handles frequency scaling */
-	struct task_struct *speedchange_task;
-
 	/* handle for get cpufreq_policy */
 	unsigned int *policy;
 };
@@ -144,9 +147,6 @@ static void cpufreq_interactive_timer_resched(
 		pcpu->policy->governor_data;
 	unsigned long expires;
 	unsigned long flags;
-
-	if (!tunables->speedchange_task)
-		return;
 
 	spin_lock_irqsave(&pcpu->load_lock, flags);
 	pcpu->time_in_idle =
@@ -178,9 +178,6 @@ static void cpufreq_interactive_timer_start(
 	unsigned long expires = jiffies +
 		usecs_to_jiffies(tunables->timer_rate);
 	unsigned long flags;
-
-	if (!tunables->speedchange_task)
-		return;
 
 	pcpu->cpu_timer.expires = expires;
 	add_timer_on(&pcpu->cpu_timer, cpu);
@@ -334,19 +331,29 @@ static u64 update_load(int cpu)
 		pcpu->policy->governor_data;
 	u64 now;
 	u64 now_idle;
-	unsigned int delta_idle;
-	unsigned int delta_time;
+	u64 delta_idle;
+	u64 delta_time;
 	u64 active_time;
 
 	now_idle = get_cpu_idle_time(cpu, &now, tunables->io_is_busy);
-	delta_idle = (unsigned int)(now_idle - pcpu->time_in_idle);
-	delta_time = (unsigned int)(now - pcpu->time_in_idle_timestamp);
+	delta_idle = (now_idle - pcpu->time_in_idle);
+	delta_time = (now - pcpu->time_in_idle_timestamp);
 
 	if (delta_time <= delta_idle)
 		active_time = 0;
 	else
 		active_time = delta_time - delta_idle;
 
+#ifdef CONFIG_LOAD_BASED_CORE_CURRENT_CAL
+	if(pcpu->pre_cpu_for_load == pcpu->policy->cur) {
+		pcpu->curr_speed_total_time += delta_time;
+		pcpu->curr_speed_idle_time += delta_idle;
+	} else {
+		pcpu->curr_speed_total_time = delta_time;
+		pcpu->curr_speed_idle_time = delta_idle;
+	}
+	pcpu->pre_cpu_for_load = pcpu->policy->cur;
+#endif
 	pcpu->cputime_speedadj += active_time * pcpu->policy->cur;
 
 #if defined(CONFIG_CPU_THERMAL_IPA) || defined(CONFIG_EXYNOS_HOTPLUG_GOVERNOR)
@@ -357,6 +364,23 @@ static u64 update_load(int cpu)
 	pcpu->time_in_idle_timestamp = now;
 	return now;
 }
+
+#ifdef CONFIG_LOAD_BASED_CORE_CURRENT_CAL
+ unsigned int get_cpu_load(int cpu)
+{
+	struct cpufreq_interactive_cpuinfo *pcpu = &per_cpu(cpuinfo, cpu);
+	unsigned int active_time, total_time;
+
+	if((pcpu == NULL) || (pcpu->curr_speed_total_time == 0) 
+			||(pcpu->curr_speed_idle_time > pcpu->curr_speed_total_time)) {
+		return 0;
+	}
+
+	active_time = (unsigned int)(pcpu->curr_speed_total_time - pcpu->curr_speed_idle_time);
+	total_time = (unsigned int)(pcpu->curr_speed_total_time);
+	return (active_time*100) / total_time; 
+}
+#endif
 
 static void cpufreq_interactive_timer(unsigned long data)
 {
@@ -480,7 +504,7 @@ static void cpufreq_interactive_timer(unsigned long data)
 	spin_lock_irqsave(&speedchange_cpumask_lock, flags);
 	cpumask_set_cpu(data, &speedchange_cpumask);
 	spin_unlock_irqrestore(&speedchange_cpumask_lock, flags);
-	wake_up_process(tunables->speedchange_task);
+	wake_up_process(speedchange_task);
 
 	goto rearm;
 
@@ -524,7 +548,6 @@ static int cpufreq_interactive_speedchange_task(void *data)
 {
 	unsigned int cpu;
 	cpumask_t tmp_mask;
-	cpumask_t policy_mask;
 	unsigned long flags;
 	struct cpufreq_interactive_cpuinfo *pcpu;
 
@@ -532,15 +555,9 @@ static int cpufreq_interactive_speedchange_task(void *data)
 		set_current_state(TASK_INTERRUPTIBLE);
 		spin_lock_irqsave(&speedchange_cpumask_lock, flags);
 
-		pcpu = &per_cpu(cpuinfo, smp_processor_id());
-		cpumask_and(&policy_mask, &speedchange_cpumask, pcpu->policy->related_cpus);
-		if (cpumask_empty(&policy_mask)) {
+		if (cpumask_empty(&speedchange_cpumask)) {
 			spin_unlock_irqrestore(&speedchange_cpumask_lock,
 					       flags);
-
-			if (kthread_should_stop())
-				break;
-
 			schedule();
 
 			if (kthread_should_stop())
@@ -550,8 +567,9 @@ static int cpufreq_interactive_speedchange_task(void *data)
 		}
 
 		set_current_state(TASK_RUNNING);
-		cpumask_and(&tmp_mask, &speedchange_cpumask, pcpu->policy->related_cpus);
-		cpumask_andnot(&speedchange_cpumask, &speedchange_cpumask, pcpu->policy->related_cpus);
+		tmp_mask = speedchange_cpumask;
+		cpumask_clear(&speedchange_cpumask);
+
 		spin_unlock_irqrestore(&speedchange_cpumask_lock, flags);
 
 		for_each_cpu(cpu, &tmp_mask) {
@@ -645,8 +663,8 @@ static void cpufreq_interactive_boost(struct cpufreq_interactive_tunables *tunab
 
 	spin_unlock_irqrestore(&speedchange_cpumask_lock, flags[0]);
 
-	if (anyboost && tunables->speedchange_task)
-		wake_up_process(tunables->speedchange_task);
+	if (anyboost && speedchange_task)
+		wake_up_process(speedchange_task);
 }
 
 static int cpufreq_interactive_notifier(
@@ -1158,8 +1176,6 @@ static int cpufreq_governor_interactive(struct cpufreq_policy *policy,
 	struct cpufreq_frequency_table *freq_table;
 	struct cpufreq_interactive_tunables *tunables;
 	unsigned long flags;
-	struct sched_param param = { .sched_priority = MAX_RT_PRIO-1 };
-	char speedchange_task_name[TASK_NAME_LEN];
 
 	if (have_governor_per_policy())
 		tunables = policy->governor_data;
@@ -1267,24 +1283,6 @@ static int cpufreq_governor_interactive(struct cpufreq_policy *policy,
 		if (!tunables->hispeed_freq)
 			tunables->hispeed_freq = policy->max;
 
-		snprintf(speedchange_task_name, TASK_NAME_LEN, "cfinteractive%d\n",
-					policy->cpu);
-
-		tunables->speedchange_task =
-			kthread_create(cpufreq_interactive_speedchange_task, NULL,
-				       speedchange_task_name);
-		if (IS_ERR(tunables->speedchange_task)) {
-			mutex_unlock(&gov_lock);
-			return PTR_ERR(tunables->speedchange_task);
-		}
-
-		sched_setscheduler_nocheck(tunables->speedchange_task, SCHED_FIFO, &param);
-		get_task_struct(tunables->speedchange_task);
-
-#ifdef CONFIG_ARM_EXYNOS_MP_CPUFREQ
-		kthread_bind(tunables->speedchange_task, policy->cpu);
-#endif
-
 		for_each_cpu(j, policy->cpus) {
 			pcpu = &per_cpu(cpuinfo, j);
 			pcpu->policy = policy;
@@ -1304,9 +1302,6 @@ static int cpufreq_governor_interactive(struct cpufreq_policy *policy,
 			up_write(&pcpu->enable_sem);
 		}
 
-		/* NB: wake up so the thread does not look hung to the freezer */
-		wake_up_process(tunables->speedchange_task);
-
 		mutex_unlock(&gov_lock);
 		break;
 
@@ -1320,10 +1315,6 @@ static int cpufreq_governor_interactive(struct cpufreq_policy *policy,
 			del_timer_sync(&pcpu->cpu_slack_timer);
 			up_write(&pcpu->enable_sem);
 		}
-
-		kthread_stop(tunables->speedchange_task);
-		put_task_struct(tunables->speedchange_task);
-		tunables->speedchange_task = NULL;
 
 		mutex_unlock(&gov_lock);
 		break;
@@ -1429,8 +1420,8 @@ static int cpufreq_interactive_cluster1_min_qos_handler(struct notifier_block *b
 		cpumask_set_cpu(cpu, &speedchange_cpumask);
 		spin_unlock_irqrestore(&speedchange_cpumask_lock, flags);
 
-		if (tunables->speedchange_task)
-			wake_up_process(tunables->speedchange_task);
+		if (speedchange_task)
+			wake_up_process(speedchange_task);
 	}
 exit:
 	mutex_unlock(&gov_lock);
@@ -1480,8 +1471,8 @@ static int cpufreq_interactive_cluster1_max_qos_handler(struct notifier_block *b
 		cpumask_set_cpu(cpu, &speedchange_cpumask);
 		spin_unlock_irqrestore(&speedchange_cpumask_lock, flags);
 
-		if (tunables->speedchange_task)
-			wake_up_process(tunables->speedchange_task);
+		if (speedchange_task)
+			wake_up_process(speedchange_task);
 	}
 exit:
 	mutex_unlock(&gov_lock);
@@ -1527,8 +1518,8 @@ static int cpufreq_interactive_cluster0_min_qos_handler(struct notifier_block *b
 		cpumask_set_cpu(0, &speedchange_cpumask);
 		spin_unlock_irqrestore(&speedchange_cpumask_lock, flags);
 
-		if (tunables->speedchange_task)
-			wake_up_process(tunables->speedchange_task);
+		if (speedchange_task)
+			wake_up_process(speedchange_task);
 	}
 exit:
 	mutex_unlock(&gov_lock);
@@ -1573,8 +1564,8 @@ static int cpufreq_interactive_cluster0_max_qos_handler(struct notifier_block *b
 		cpumask_set_cpu(0, &speedchange_cpumask);
 		spin_unlock_irqrestore(&speedchange_cpumask_lock, flags);
 
-		if (tunables->speedchange_task)
-			wake_up_process(tunables->speedchange_task);
+		if (speedchange_task)
+			wake_up_process(speedchange_task);
 	}
 exit:
 	mutex_unlock(&gov_lock);
@@ -1603,10 +1594,23 @@ static int __init cpufreq_interactive_init(void)
 		spin_lock_init(&pcpu->load_lock);
 		spin_lock_init(&pcpu->target_freq_lock);
 		init_rwsem(&pcpu->enable_sem);
+#ifdef CONFIG_LOAD_BASED_CORE_CURRENT_CAL
+		pcpu->pre_cpu_for_load = 0;
+		pcpu->curr_speed_total_time = 0;
+		pcpu->curr_speed_idle_time = 0;
+#endif
 	}
 
 	spin_lock_init(&speedchange_cpumask_lock);
 	mutex_init(&gov_lock);
+
+	speedchange_task =
+		kthread_create(cpufreq_interactive_speedchange_task, NULL,
+				"cfinteractive");
+	if (IS_ERR(speedchange_task))
+		return PTR_ERR(speedchange_task);
+
+	kthread_bind(speedchange_task, 0);
 
 #ifdef CONFIG_ARCH_EXYNOS
 	pm_qos_add_notifier(PM_QOS_CLUSTER1_FREQ_MIN, &cpufreq_interactive_cluster1_min_qos_notifier);

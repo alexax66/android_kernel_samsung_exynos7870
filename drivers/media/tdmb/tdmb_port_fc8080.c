@@ -116,10 +116,18 @@ static bool __get_ensemble_info(struct ensemble_info_type *e_info
 					= fci_sub_info->ucServiceType;
 				e_info->sub_ch[sub_i].svc_id
 					= fci_sub_info->ulServiceID;
+
+				e_info->sub_ch[sub_i].ca_flags
+					= fci_sub_info->ucCAFlag;
+
 				e_info->sub_ch[sub_i].scids
 					= fci_sub_info->scids;
 				e_info->sub_ch[sub_i].ecc
 					= fci_sub_info->ecc;
+
+				if (fci_sub_info->ucCAFlag)
+					DPRINTK("%s: sub_channel_id(%d) ca_flag detected\n",
+					__func__, sub_i);	
 				if (i == 0)
 					memcpy(
 						e_info->sub_ch[sub_i].svc_label,
@@ -264,50 +272,6 @@ static bool fc8080_scan_ch(struct ensemble_info_type *e_info
 	}
 }
 
-static int fc8080_byte_write(u16 addr, u8 data)
-{
-	pr_debug("%s %d fc8080_pwr_on(%d), addr(0x%x), data(0x%x)\n",
-		__func__, __LINE__, fc8080_pwr_on, addr, data);
-	
-	if (fc8080_pwr_on == false)
-		return -1;
-
-	return dmb_drv_byte_write(addr, data);
-}
-
-static int fc8080_byte_read(u16 addr, u8* data)
-{
-	pr_debug("%s %d fc8080_pwr_on(%d), addr(0x%x)\n",
-		__func__, __LINE__, fc8080_pwr_on, addr);
-	
-	if (fc8080_pwr_on == false)
-		return -1;
-
-	return dmb_drv_byte_read(addr, data);
-}	
-
-static int fc8080_word_write(u16 addr, u16 data)
-{
-	pr_debug("%s %d fc8080_pwr_on(%d), addr(0x%x), data(0x%x)\n",
-		__func__, __LINE__, fc8080_pwr_on, addr, data);
-	
-	if (fc8080_pwr_on == false)
-		return -1;
-
-	return dmb_drv_word_write(addr, data);
-}
-
-static int fc8080_word_read(u16 addr, u16* data)
-{
-	pr_debug("%s %d fc8080_pwr_on(%d), addr(0x%x)\n",
-		__func__, __LINE__, fc8080_pwr_on, addr);
-	
-	if (fc8080_pwr_on == false)
-		return -1;
-
-	return dmb_drv_word_read(addr, data);
-}
-
 static unsigned long fc8080_int_size(void)
 {
 #if defined(CONFIG_TDMB_TSIF_SLSI) || defined(CONFIG_TDMB_TSIF_QC)
@@ -327,10 +291,6 @@ static struct tdmb_drv_func fci_fc8080_drv_func = {
 	.pull_data = dmb_drv_isr,
 #endif
 	.get_int_size = fc8080_int_size,
-	.byte_write = fc8080_byte_write,
-	.byte_read = fc8080_byte_read,
-	.word_write = fc8080_word_write,
-	.word_read = fc8080_word_read,
 };
 
 struct tdmb_drv_func *fc8080_drv_func(void)

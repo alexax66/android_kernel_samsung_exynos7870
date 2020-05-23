@@ -558,6 +558,7 @@ int fts_fw_wait_for_specific_event(struct fts_ts_info *info, unsigned char eid0,
 
 void fts_execute_autotune(struct fts_ts_info *info)
 {
+	bool NeedSaveTune = false;
 #ifdef FTS_SUPPORT_PARTIAL_DOWNLOAD
 	int ret = 0;
 	unsigned char regData[4]; // {0xC1, 0x0E};
@@ -602,6 +603,7 @@ void fts_execute_autotune(struct fts_ts_info *info)
 					fts_fw_wait_for_event(info, STATUS_EVENT_SELF_AUTOTUNE_DONE);
 			#endif
 		}
+		NeedSaveTune = true;
 #ifdef FTS_SUPPORT_PARTIAL_DOWNLOAD
     }
 
@@ -621,6 +623,7 @@ void fts_execute_autotune(struct fts_ts_info *info)
 			msleep(20);
 			if(info->stm_format_ver != STM_FORMAT_VER6)
 				fts_fw_wait_for_event(info, STATUS_EVENT_PURE_AUTOTUNE_FLAG_ERASE_FINISH);
+			NeedSaveTune = true;
 		}
 #endif
 	} else {
@@ -634,12 +637,16 @@ void fts_execute_autotune(struct fts_ts_info *info)
 		msleep(20);
 		if(info->stm_format_ver != STM_FORMAT_VER6)
 			fts_fw_wait_for_event(info, STATUS_EVENT_PURE_AUTOTUNE_FLAG_ERASE_FINISH);
+		NeedSaveTune = true;
 	}
 #endif
 
-	info->fts_command(info, FTS_CMD_SAVE_CX_TUNING);
-	msleep(230);
-	fts_fw_wait_for_event(info, STATUS_EVENT_FLASH_WRITE_CXTUNE_VALUE);
+	if (NeedSaveTune)
+	{
+		info->fts_command(info, FTS_CMD_SAVE_CX_TUNING);
+		msleep(230);
+		fts_fw_wait_for_event(info, STATUS_EVENT_FLASH_WRITE_CXTUNE_VALUE);
+	}
 
 	// CHECK LATER
 	if( info->stm_ver == STM_VER7)

@@ -1,9 +1,4 @@
 /*
- *  stk3013.c - Linux kernel modules for sensortek stk301x, stk321x, stk331x
- *  , and stk3410 proximity/ambient light sensor
- *
- *  Copyright (C) 2012~2015 Lex Hsieh / sensortek <lex_hsieh@sensortek.com.tw>
- *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
  *  the Free Software Foundation; either version 2 of the License, or
@@ -39,109 +34,112 @@
 #include <linux/fs.h>
 #include <linux/uaccess.h>
 #include <linux/regulator/consumer.h>
-#ifdef CONFIG_OF
 #include <linux/of_gpio.h>
-#endif
+
 #include <linux/sensor/sensors_core.h>
-#include "linux/sensor/stk3013.h"
+#include "stk3013.h"
 
 #define DRIVER_VERSION  "3.10.0_ps_only_20150508"
 
 /* Driver Settings */
-#define STK_INT_PS_MODE	1	/* 1, 2, or 3 */
-#define STK_DEBUG_PRINTF
-/*#define STK_CHK_REG*/
+#define STK_INT_PS_MODE 1	/* 1, 2, or 3 */
+#undef STK_CHK_REG
 
-#define PROX_READ_NUM	40
+#define PROX_READ_NUM   40
 
 /* Define Register Map */
-#define STK_STATE_REG		0x00
-#define STK_PSCTRL_REG		0x01
-#define STK_LEDCTRL_REG		0x03
-#define STK_INT_REG			0x04
-#define STK_WAIT_REG			0x05
-#define STK_THDH1_PS_REG		0x06
-#define STK_THDH2_PS_REG		0x07
-#define STK_THDL1_PS_REG		0x08
-#define STK_THDL2_PS_REG		0x09
-#define STK_FLAG_REG			0x10
-#define STK_DATA1_PS_REG		0x11
-#define STK_DATA2_PS_REG		0x12
-#define STK_DATA1_OFFSET_REG	0x15
-#define STK_DATA2_OFFSET_REG	0x16
-#define STK_DATA1_IR_REG		0x17
-#define STK_DATA2_IR_REG		0x18
-#define STK_PDT_ID_REG		0x3E
-#define STK_RSRVD_REG		0x3F
-#define STK_SW_RESET_REG		0x80
+#define STK_STATE_REG           0x00
+#define STK_PSCTRL_REG          0x01
+#define STK_LEDCTRL_REG         0x03
+#define STK_INT_REG             0x04
+#define STK_WAIT_REG            0x05
+#define STK_THDH1_PS_REG        0x06
+#define STK_THDH2_PS_REG        0x07
+#define STK_THDL1_PS_REG        0x08
+#define STK_THDL2_PS_REG        0x09
+#define STK_FLAG_REG            0x10
+#define STK_DATA1_PS_REG        0x11
+#define STK_DATA2_PS_REG        0x12
+#define STK_DATA1_OFFSET_REG    0x15
+#define STK_DATA2_OFFSET_REG    0x16
+#define STK_DATA1_IR_REG        0x17
+#define STK_DATA2_IR_REG        0x18
+#define STK_PDT_ID_REG          0x3E
+#define STK_RSRVD_REG           0x3F
+#define STK_SW_RESET_REG        0x80
 
-#define STK_GSCTRL_REG		0x1A
-#define STK_FLAG2_REG		0x1C
+#define STK_GSCTRL_REG          0x1A
+#define STK_FLAG2_REG           0x1C
 
 /* Define state reg */
-#define STK_STATE_EN_IRS_SHIFT		7
-#define STK_STATE_EN_AK_SHIFT		6
-#define STK_STATE_EN_ASO_SHIFT		5
-#define STK_STATE_EN_IRO_SHIFT		4
-#define STK_STATE_EN_WAIT_SHIFT	2
-#define STK_STATE_EN_PS_SHIFT		0
+#define STK_STATE_EN_IRS_SHIFT  7
+#define STK_STATE_EN_AK_SHIFT   6
+#define STK_STATE_EN_ASO_SHIFT  5
+#define STK_STATE_EN_IRO_SHIFT  4
+#define STK_STATE_EN_WAIT_SHIFT 2
+#define STK_STATE_EN_PS_SHIFT   0
 
-#define STK_STATE_EN_IRS_MASK		0x80
-#define STK_STATE_EN_AK_MASK		0x40
-#define STK_STATE_EN_ASO_MASK		0x20
-#define STK_STATE_EN_IRO_MASK		0x10
-#define STK_STATE_EN_WAIT_MASK	0x04
-#define STK_STATE_EN_PS_MASK		0x01
+#define STK_STATE_EN_IRS_MASK   0x80
+#define STK_STATE_EN_AK_MASK    0x40
+#define STK_STATE_EN_ASO_MASK   0x20
+#define STK_STATE_EN_IRO_MASK   0x10
+#define STK_STATE_EN_WAIT_MASK  0x04
+#define STK_STATE_EN_PS_MASK    0x01
 
 /* Define PS ctrl reg */
-#define STK_PS_PRS_SHIFT		6
-#define STK_PS_GAIN_SHIFT		4
-#define STK_PS_IT_SHIFT		0
+#define STK_PS_PRS_SHIFT        6
+#define STK_PS_GAIN_SHIFT       4
+#define STK_PS_IT_SHIFT         0
 
-#define STK_PS_PRS_MASK		0xC0
-#define STK_PS_GAIN_MASK		0x30
-#define STK_PS_IT_MASK		0x0F
+#define STK_PS_PRS_MASK         0xC0
+#define STK_PS_GAIN_MASK        0x30
+#define STK_PS_IT_MASK          0x0F
 
 /* Define LED ctrl reg */
-#define STK_LED_IRDR_SHIFT	6
-#define STK_LED_DT_SHIFT		0
+#define STK_LED_IRDR_SHIFT      6
+#define STK_LED_DT_SHIFT        0
 
-#define STK_LED_IRDR_MASK	0xC0
-#define STK_LED_DT_MASK		0x3F
+#define STK_LED_IRDR_MASK       0xC0
+#define STK_LED_DT_MASK         0x3F
 
 /* Define interrupt reg */
-#define STK_INT_CTRL_SHIFT		7
-#define STK_INT_OUI_SHIFT		4
-#define STK_INT_PS_SHIFT		0
+#define STK_INT_CTRL_SHIFT      7
+#define STK_INT_OUI_SHIFT       4
+#define STK_INT_PS_SHIFT        0
 
-#define STK_INT_CTRL_MASK		0x80
-#define STK_INT_OUI_MASK		0x10
-#define STK_INT_PS_MASK		0x07
+#define STK_INT_CTRL_MASK       0x80
+#define STK_INT_OUI_MASK        0x10
+#define STK_INT_PS_MASK         0x07
 
 /* Define flag reg */
-#define STK_FLG_PSDR_SHIFT	6
-#define STK_FLG_PSINT_SHIFT	4
-#define STK_FLG_OUI_SHIFT		2
-#define STK_FLG_IR_RDY_SHIFT	1
-#define STK_FLG_NF_SHIFT		0
+#define STK_FLG_PSDR_SHIFT      6
+#define STK_FLG_PSINT_SHIFT     4
+#define STK_FLG_OUI_SHIFT       2
+#define STK_FLG_IR_RDY_SHIFT    1
+#define STK_FLG_NF_SHIFT        0
 
-#define STK_FLG_PSDR_MASK	0x40
-#define STK_FLG_PSINT_MASK	0x10
-#define STK_FLG_OUI_MASK		0x04
-#define STK_FLG_IR_RDY_MASK	0x02
-#define STK_FLG_NF_MASK		0x01
+#define STK_FLG_PSDR_MASK       0x40
+#define STK_FLG_PSINT_MASK      0x10
+#define STK_FLG_OUI_MASK        0x04
+#define STK_FLG_IR_RDY_MASK     0x02
+#define STK_FLG_NF_MASK         0x01
 
-#define VENDOR	"SENSORTEK"
-#define CHIP_ID	"STK3013"
+#define VENDOR                  "SENSORTEK"
+#define CHIP_ID                 "STK3013"
+#define MODULE_NAME_PROX        "proximity_sensor"
+#define MODULE_NAME_PROX_ALERT  "proximity_alert_sensor"
 
-#define STK3310SA_PID	0x17
-#define STK3311SA_PID	0x1E
-#define STK3311WV_PID	0x1D
+#define PROX_ALERT_DELAY         2000 * NSEC_PER_MSEC
+
+#define STK3310SA_PID    0x17
+#define STK3311SA_PID    0x1E
+#define STK3311WV_PID    0x1D
 
 #define PROXIMITY_CALIBRATION
 #ifdef PROXIMITY_CALIBRATION
-#define CALIBRATION_FILE_PATH	"/efs/FactoryApp/prox_cal"
+#define CALIBRATION_FILE_PATH   "/efs/FactoryApp/prox_cal"
 #endif
+
 enum {
 	OFF = 0,
 	ON,
@@ -170,12 +168,15 @@ struct stk3013_data {
 	uint16_t ps_cal_fail_adc;
 	uint16_t ps_default_offset;
 	uint16_t ps_offset;
+	uint16_t ps_alert_thd;
 	unsigned int cal_result;
 	struct mutex io_lock;
 	struct input_dev *ps_input_dev;
+	struct input_dev *ps_alert_input_dev;
 	int32_t ps_distance_last;
-	bool ps_enabled;
-	bool re_enable_ps;
+	uint8_t ps_enabled;
+	uint8_t ps_alert_enabled;
+	uint8_t ps_alert_mode_support;
 	struct wake_lock ps_wakelock;
 	ktime_t ps_poll_delay;
 	bool first_boot;
@@ -185,17 +186,25 @@ struct stk3013_data {
 	struct regulator *vdd;
 	struct regulator *vio;
 	struct device *ps_dev;
+	struct device *ps_alert_dev;
 	struct hrtimer prox_timer;
+	struct hrtimer prox_alert_timer;
 	ktime_t prox_poll_delay;
 	struct workqueue_struct *prox_wq;
+	struct workqueue_struct *prox_alert_wq;
 	struct work_struct work_prox;
+	struct work_struct work_prox_alert;
 	int avg[3];
 };
 
-static int32_t stk3013_enable_ps(struct device *dev, uint8_t enable, uint8_t validate_reg);
-static int32_t stk3013_set_ps_thd_l(struct stk3013_data *ps_data, uint16_t thd_l);
-static int32_t stk3013_set_ps_thd_h(struct stk3013_data *ps_data, uint16_t thd_h);
-static int32_t stk3013_set_ps_offset(struct stk3013_data *ps_data, uint16_t ps_offset);
+static int32_t stk3013_enable_ps(struct device *dev, uint8_t enable,
+					uint8_t validate_reg);
+static int32_t stk3013_set_ps_thd_l(struct stk3013_data *ps_data,
+					uint16_t thd_l);
+static int32_t stk3013_set_ps_thd_h(struct stk3013_data *ps_data,
+					uint16_t thd_h);
+static int32_t stk3013_set_ps_offset(struct stk3013_data *ps_data,
+					uint16_t ps_offset);
 #ifdef PROXIMITY_CALIBRATION
 static int check_calibration_offset(struct stk3013_data *ps_data);
 #endif
@@ -203,9 +212,12 @@ static int check_calibration_offset(struct stk3013_data *ps_data);
 static int stk3013_validate_n_handle(struct i2c_client *client);
 #endif
 static int stk3013_regulator_onoff(struct device *dev, bool onoff);
-static int32_t stk3013_init_all_setting(struct i2c_client *client, struct stk3013_platform_data *plat_data);
+static int stk3013_vled_onoff(struct device *dev, bool onoff);
+static int32_t stk3013_init_all_setting(struct i2c_client *client,
+				struct stk3013_platform_data *plat_data);
 
-static int stk3013_i2c_read_data(struct i2c_client *client, unsigned char command, int length, unsigned char *values)
+static int stk3013_i2c_read_data(struct i2c_client *client,
+	unsigned char command, int length, unsigned char *values)
 {
 	uint8_t retry;
 	int ret;
@@ -228,28 +240,28 @@ static int stk3013_i2c_read_data(struct i2c_client *client, unsigned char comman
 		ret = i2c_transfer(client->adapter, msgs, 2);
 		if (ret == 2)
 			break;
-		else
-			mdelay(5);
 	}
 
 	if (retry >= 5) {
-		SENSOR_ERR("i2c read fail, err=%d\n",  ret);
+		SENSOR_ERR("i2c read fail, err=%d\n", ret);
 		return -EIO;
 	}
 	return 0;
 }
 
-static int stk3013_i2c_write_data(struct i2c_client *client, unsigned char command, int length, unsigned char *values)
+static int stk3013_i2c_write_data(struct i2c_client *client,
+	unsigned char command, int length, unsigned char *values)
 {
 	int retry;
 	int ret;
 	unsigned char data[11];
 	struct i2c_msg msg;
 	int index;
+
 	if (!client)
 		return -EINVAL;
 	else if (length >= 10) {
-		SENSOR_ERR("length %d exceeds 10\n",  length);
+		SENSOR_ERR("length %d exceeds 10\n", length);
 		return -EINVAL;
 	}
 
@@ -266,35 +278,38 @@ static int stk3013_i2c_write_data(struct i2c_client *client, unsigned char comma
 		ret = i2c_transfer(client->adapter, &msg, 1);
 		if (ret == 1)
 			break;
-		else
-			mdelay(5);
 	}
 
 	if (retry >= 5) {
-		SENSOR_ERR("i2c write fail, err=%d\n",  ret);
+		SENSOR_ERR("i2c write fail, err=%d\n", ret);
 		return -EIO;
 	}
 	return 0;
 }
 
-static int stk3013_i2c_smbus_read_byte_data(struct i2c_client *client, unsigned char command)
+static int stk3013_i2c_smbus_read_byte_data(struct i2c_client *client,
+				unsigned char command)
 {
 	unsigned char value;
 	int ret;
+
 	ret = stk3013_i2c_read_data(client, command, 1, &value);
 	if (ret < 0)
 		return ret;
 	return value;
 }
 
-static int stk3013_i2c_smbus_write_byte_data(struct i2c_client *client, unsigned char command, unsigned char value)
+static int stk3013_i2c_smbus_write_byte_data(struct i2c_client *client,
+				unsigned char command, unsigned char value)
 {
 	int ret;
+
 	ret = stk3013_i2c_write_data(client, command, 1, &value);
 	return ret;
 }
 
-static void stk3013_proc_plat_data(struct stk3013_data *ps_data, struct stk3013_platform_data *plat_data)
+static void stk3013_proc_plat_data(struct stk3013_data *ps_data,
+				struct stk3013_platform_data *plat_data)
 {
 	uint8_t w_reg;
 
@@ -306,10 +321,10 @@ static void stk3013_proc_plat_data(struct stk3013_data *ps_data, struct stk3013_
 
 	ps_data->wait_reg = plat_data->wait_reg;
 	if (ps_data->wait_reg < 2) {
-		SENSOR_WARN("wait_reg should be larger than 2, force to write 2\n");
+		SENSOR_INFO("wait_reg should be larger than 2, force to write 2\n");
 		ps_data->wait_reg = 2;
 	} else if (ps_data->wait_reg > 0xFF) {
-		SENSOR_WARN("wait_reg should be less than 0xFF, force to write 0xFF\n");
+		SENSOR_INFO("wait_reg should be less than 0xFF, force to write 0xFF\n");
 		ps_data->wait_reg = 0xFF;
 	}
 	if (ps_data->ps_thd_h == 0 && ps_data->ps_thd_l == 0) {
@@ -322,37 +337,40 @@ static void stk3013_proc_plat_data(struct stk3013_data *ps_data, struct stk3013_
 		ps_data->ps_cal_skip_adc = plat_data->ps_cal_skip_adc;
 		ps_data->ps_cal_fail_adc = plat_data->ps_cal_fail_adc;
 		/*initialize the offset data*/
+		ps_data->ps_default_offset = plat_data->ps_default_offset;
 		ps_data->ps_offset = ps_data->ps_default_offset;
 	}
-	ps_data->ps_default_offset = plat_data->ps_default_offset;
 
 	w_reg = 0;
 	w_reg |= STK_INT_PS_MODE;
 
 	ps_data->int_reg = w_reg;
-	return;
 }
 
 static int32_t stk3013_init_all_reg(struct stk3013_data *ps_data)
 {
 	int32_t ret;
 
-	ret = stk3013_i2c_smbus_write_byte_data(ps_data->client, STK_STATE_REG, ps_data->state_reg);
+	ret = stk3013_i2c_smbus_write_byte_data(ps_data->client,
+				STK_STATE_REG, ps_data->state_reg);
 	if (ret < 0) {
 		SENSOR_ERR("write i2c error\n");
 		return ret;
 	}
-	ret = stk3013_i2c_smbus_write_byte_data(ps_data->client, STK_PSCTRL_REG, ps_data->psctrl_reg);
+	ret = stk3013_i2c_smbus_write_byte_data(ps_data->client,
+				STK_PSCTRL_REG, ps_data->psctrl_reg);
 	if (ret < 0) {
 		SENSOR_ERR("write i2c error\n");
 		return ret;
 	}
-	ret = stk3013_i2c_smbus_write_byte_data(ps_data->client, STK_LEDCTRL_REG, ps_data->ledctrl_reg);
+	ret = stk3013_i2c_smbus_write_byte_data(ps_data->client,
+				STK_LEDCTRL_REG, ps_data->ledctrl_reg);
 	if (ret < 0) {
 		SENSOR_ERR("write i2c error\n");
 		return ret;
 	}
-	ret = stk3013_i2c_smbus_write_byte_data(ps_data->client, STK_WAIT_REG, ps_data->wait_reg);
+	ret = stk3013_i2c_smbus_write_byte_data(ps_data->client,
+				STK_WAIT_REG, ps_data->wait_reg);
 	if (ret < 0) {
 		SENSOR_ERR("write i2c error\n");
 		return ret;
@@ -360,7 +378,8 @@ static int32_t stk3013_init_all_reg(struct stk3013_data *ps_data)
 	stk3013_set_ps_thd_h(ps_data, ps_data->ps_thd_h);
 	stk3013_set_ps_thd_l(ps_data, ps_data->ps_thd_l);
 	stk3013_set_ps_offset(ps_data, ps_data->ps_default_offset);
-	ret = stk3013_i2c_smbus_write_byte_data(ps_data->client, STK_INT_REG, ps_data->int_reg);
+	ret = stk3013_i2c_smbus_write_byte_data(ps_data->client,
+					STK_INT_REG, ps_data->int_reg);
 	if (ret < 0) {
 		SENSOR_ERR("write i2c error\n");
 		return ret;
@@ -394,7 +413,7 @@ static int32_t stk3013_read_otp25(struct stk3013_data *ps_data)
 
 	ret = stk3013_i2c_smbus_read_byte_data(ps_data->client, 0x91);
 	if (ret < 0) {
-		SENSOR_ERR("fail, ret=%d\n",  ret);
+		SENSOR_ERR("fail, ret=%d\n", ret);
 		return ret;
 	}
 	otp25 = ret;
@@ -404,7 +423,7 @@ static int32_t stk3013_read_otp25(struct stk3013_data *ps_data)
 		SENSOR_ERR("write i2c error\n");
 		return ret;
 	}
-	SENSOR_INFO(" otp25=0x%x\n",  otp25);
+	SENSOR_INFO("otp25=0x%x\n", otp25);
 	if (otp25 & 0x80)
 		return 1;
 	return 0;
@@ -417,27 +436,28 @@ static int32_t stk3013_check_pid(struct stk3013_data *ps_data)
 
 	ps_data->p_wv_r_bd_with_co = 0;
 
-	ret = stk3013_i2c_read_data(ps_data->client, STK_PDT_ID_REG, 2, &value[0]);
+	ret = stk3013_i2c_read_data(ps_data->client,
+				STK_PDT_ID_REG, 2, &value[0]);
 	if (ret < 0) {
-		SENSOR_ERR("fail, ret=%d\n",  ret);
+		SENSOR_ERR("fail, ret=%d\n", ret);
 		return ret;
 	}
 
-	SENSOR_INFO(" PID=0x%x, RID=0x%x\n",  value[0], value[1]);
+	SENSOR_INFO("PID=0x%x, RID=0x%x\n", value[0], value[1]);
 	ps_data->pid = value[0];
 
 	if (value[0] == STK3311WV_PID)
-		ps_data->p_wv_r_bd_with_co |= 0b100;
+		ps_data->p_wv_r_bd_with_co |= 0xb100;
 	if (value[1] == 0xC3)
-		ps_data->p_wv_r_bd_with_co |= 0b010;
+		ps_data->p_wv_r_bd_with_co |= 0xb010;
 
 	if (stk3013_read_otp25(ps_data) == 1)
-		ps_data->p_wv_r_bd_with_co |= 0b001;
-	SENSOR_INFO(" p_wv_r_bd_with_co = 0x%x\n",  ps_data->p_wv_r_bd_with_co);
+		ps_data->p_wv_r_bd_with_co |= 0xb001;
+	SENSOR_INFO("p_wv_r_bd_with_co = 0x%x\n", ps_data->p_wv_r_bd_with_co);
 
 	if (value[0] == 0) {
 		SENSOR_ERR("PID=0x0, please make sure the chip is stk3013!\n");
-		return -2;
+		return -ENXIO;
 	}
 
 	pid_msb = value[0] & 0xF0;
@@ -447,8 +467,8 @@ static int32_t stk3013_check_pid(struct stk3013_data *ps_data)
 	case 0x30:
 		return 0;
 	default:
-		SENSOR_ERR("invalid PID(%#x)\n",  value[0]);
-		return -1;
+		SENSOR_ERR("invalid PID(%#x)\n", value[0]);
+		return -EPERM;
 	}
 	return 0;
 }
@@ -459,18 +479,20 @@ static int32_t stk3013_software_reset(struct stk3013_data *ps_data)
 	uint8_t w_reg;
 
 	w_reg = 0x7F;
-	r = stk3013_i2c_smbus_write_byte_data(ps_data->client, STK_WAIT_REG, w_reg);
+	r = stk3013_i2c_smbus_write_byte_data(ps_data->client,
+						STK_WAIT_REG, w_reg);
 	if (r < 0) {
-		SENSOR_ERR("software reset: write i2c error, ret=%d\n",  r);
+		SENSOR_ERR("software reset: write i2c error, ret=%d\n", r);
 		return r;
 	}
 	r = stk3013_i2c_smbus_read_byte_data(ps_data->client, STK_WAIT_REG);
 	if (w_reg != r) {
 		SENSOR_ERR("software reset: read-back value is not the same\n");
-		return -1;
+		return -EPERM;
 	}
 
-	r = stk3013_i2c_smbus_write_byte_data(ps_data->client, STK_SW_RESET_REG, 0);
+	r = stk3013_i2c_smbus_write_byte_data(ps_data->client,
+						STK_SW_RESET_REG, 0);
 	if (r < 0) {
 		SENSOR_ERR("software reset: read error after reset\n");
 		return r;
@@ -479,37 +501,44 @@ static int32_t stk3013_software_reset(struct stk3013_data *ps_data)
 	return 0;
 }
 
-static int32_t stk3013_set_ps_thd_l(struct stk3013_data *ps_data, uint16_t thd_l)
+static int32_t stk3013_set_ps_thd_l(struct stk3013_data *ps_data,
+						uint16_t thd_l)
 {
 	unsigned char val[2];
 	int ret;
+
 	val[0] = (thd_l & 0xFF00) >> 8;
 	val[1] = thd_l & 0x00FF;
-	ret = stk3013_i2c_write_data(ps_data->client, STK_THDL1_PS_REG, 2, val);
+	ret = stk3013_i2c_write_data(ps_data->client,
+				STK_THDL1_PS_REG, 2, val);
 	if (ret < 0)
 		SENSOR_ERR("fail, ret=%d\n", ret);
 	else
 		ps_data->ps_thd_l = thd_l;
 
-	SENSOR_INFO(" thd_l=%d\n", thd_l);
+	SENSOR_INFO("thd_l=%d\n", thd_l);
 	return ret;
 }
-static int32_t stk3013_set_ps_thd_h(struct stk3013_data *ps_data, uint16_t thd_h)
+static int32_t stk3013_set_ps_thd_h(struct stk3013_data *ps_data,
+						uint16_t thd_h)
 {
 	unsigned char val[2];
 	int ret;
+
 	val[0] = (thd_h & 0xFF00) >> 8;
 	val[1] = thd_h & 0x00FF;
-	ret = stk3013_i2c_write_data(ps_data->client, STK_THDH1_PS_REG, 2, val);
+	ret = stk3013_i2c_write_data(ps_data->client,
+				STK_THDH1_PS_REG, 2, val);
 	if (ret < 0)
 		SENSOR_ERR("fail, ret=%d\n", ret);
 	else
 		ps_data->ps_thd_h = thd_h;
 
-	SENSOR_INFO(" thd_h=%d\n", thd_h);
+	SENSOR_INFO("thd_h=%d\n", thd_h);
 	return ret;
 }
-static int32_t stk3013_set_ps_offset(struct stk3013_data *ps_data, uint16_t ps_offset)
+static int32_t stk3013_set_ps_offset(struct stk3013_data *ps_data,
+						uint16_t ps_offset)
 {
 	unsigned char val[2];
 	int ret;
@@ -517,9 +546,10 @@ static int32_t stk3013_set_ps_offset(struct stk3013_data *ps_data, uint16_t ps_o
 	val[0] = (ps_offset & 0xFF00) >> 8;
 	val[1] = ps_offset & 0x00FF;
 
-	ret = stk3013_i2c_write_data(ps_data->client, STK_DATA1_OFFSET_REG, 2, val);
+	ret = stk3013_i2c_write_data(ps_data->client,
+			STK_DATA1_OFFSET_REG, 2, val);
 	if (ret < 0)
-		SENSOR_ERR("fail, ret=%d\n",  ret);
+		SENSOR_ERR("fail, ret=%d\n", ret);
 	return ret;
 }
 
@@ -527,83 +557,110 @@ static uint32_t stk3013_get_ps_reading(struct stk3013_data *ps_data)
 {
 	unsigned char value[2];
 	int ret;
-	ret = stk3013_i2c_read_data(ps_data->client, STK_DATA1_PS_REG, 2, &value[0]);
+
+	ret = stk3013_i2c_read_data(ps_data->client,
+			STK_DATA1_PS_REG, 2, &value[0]);
 	if (ret < 0) {
-		SENSOR_ERR("DATA1 fail, ret=%d\n",  ret);
+		SENSOR_ERR("DATA1 fail, ret=%d\n", ret);
 		return ret;
 	}
 
 	return (value[0]<<8) | value[1];
 }
 
-static int32_t stk3013_set_flag(struct stk3013_data *ps_data, uint8_t org_flag_reg, uint8_t clr)
+static int32_t stk3013_set_flag(struct stk3013_data *ps_data,
+					uint8_t org_flag_reg, uint8_t clr)
 {
 	uint8_t w_flag;
 	int ret;
 
-	w_flag = org_flag_reg | (STK_FLG_PSINT_MASK | STK_FLG_OUI_MASK | STK_FLG_IR_RDY_MASK);
+	w_flag = org_flag_reg | (STK_FLG_PSINT_MASK | STK_FLG_OUI_MASK |
+					STK_FLG_IR_RDY_MASK);
 	w_flag &= (~clr);
-	/*SENSOR_INFO(" org_flag_reg=0x%x, w_flag = 0x%x\n",  org_flag_reg, w_flag);*/
-	ret = stk3013_i2c_smbus_write_byte_data(ps_data->client, STK_FLAG_REG, w_flag);
+	/*SENSOR_INFO(" org_flag_reg=0x%x, w_flag = 0x%x\n",
+		org_flag_reg, w_flag);*/
+	ret = stk3013_i2c_smbus_write_byte_data(ps_data->client,
+						STK_FLAG_REG, w_flag);
 	if (ret < 0)
-		SENSOR_ERR("fail, ret=%d\n",  ret);
+		SENSOR_ERR("fail, ret=%d\n", ret);
+
 	return ret;
 }
 
 static int32_t stk3013_get_flag(struct stk3013_data *ps_data)
 {
 	int ret;
-	ret = stk3013_i2c_smbus_read_byte_data(ps_data->client, STK_FLAG_REG);
+
+	ret = stk3013_i2c_smbus_read_byte_data(ps_data->client,
+						STK_FLAG_REG);
 	if (ret < 0)
-		SENSOR_ERR("fail, ret=%d\n",  ret);
+		SENSOR_ERR("fail, ret=%d\n", ret);
 	return ret;
 }
 
 static int32_t stk3013_set_state(struct stk3013_data *ps_data, uint8_t state)
 {
 	int ret;
-	ret = stk3013_i2c_smbus_write_byte_data(ps_data->client, STK_STATE_REG, state);
+
+	ret = stk3013_i2c_smbus_write_byte_data(ps_data->client,
+						STK_STATE_REG, state);
 	if (ret < 0)
-		SENSOR_ERR("fail, ret=%d\n",  ret);
+		SENSOR_ERR("fail, ret=%d\n", ret);
+
 	return ret;
 }
 
 static int32_t stk3013_get_state(struct stk3013_data *ps_data)
 {
 	int ret;
+
 	ret = stk3013_i2c_smbus_read_byte_data(ps_data->client, STK_STATE_REG);
 	if (ret < 0)
-		SENSOR_ERR("fail, ret=%d\n",  ret);
+		SENSOR_ERR("fail, ret=%d\n", ret);
 	return ret;
 }
 
-static int32_t stk3013_enable_ps(struct device *dev, uint8_t enable, uint8_t validate_reg)
+static int32_t stk3013_enable_ps(struct device *dev,
+			uint8_t enable, uint8_t validate_reg)
 {
 	struct stk3013_data *ps_data =  dev_get_drvdata(dev);
-	int32_t ret;
+	int32_t ret = 0;
 	uint8_t w_state_reg;
-	uint8_t curr_ps_enable;
 	uint32_t read_value;
 	int32_t near_far_state;
-
 
 #ifdef STK_CHK_REG
 	if (validate_reg) {
 		ret = stk3013_validate_n_handle(ps_data->client);
 		if (ret < 0)
-			SENSOR_ERR("stk3013_validate_n_handle fail: %d\n", ret);
+			SENSOR_ERR("stk3013_validate_n_handle fail: %d\n",
+					ret);
 	}
 #endif /* #ifdef STK_CHK_REG */
 
-	curr_ps_enable = ps_data->ps_enabled ? 1 : 0;
-	if (curr_ps_enable == enable)
-		return 0;
+	// Enable if both prox and prox_alert are OFF
+	// Disable if only one of prox and prox_alert is ON
+	if (enable) {
+		if (ps_data->ps_enabled || ps_data->ps_alert_enabled)
+			return 0;
+	} else {
+		if ((ps_data->ps_enabled && ps_data->ps_alert_enabled) ||
+				(!ps_data->ps_enabled && !ps_data->ps_alert_enabled))
+			return 0;
+	}
+
+	SENSOR_INFO("enable: %d, ps_enabled: %d, ps_alert_enabled: %d", enable,
+					ps_data->ps_enabled, ps_data->ps_alert_enabled);
+
 	if (enable) {
 		/*stk3013_regulator_onoff(dev, ON);*/
-		msleep(20);
-		ret = stk3013_init_all_setting(ps_data->client, ps_data->pdata);
+		if(ps_data->pdata->vled_ldo)
+			stk3013_vled_onoff(dev,ON);
+		usleep_range(20000,20000);
+		ret = stk3013_init_all_setting(ps_data->client,
+							ps_data->pdata);
 		if (ret < 0) {
-			SENSOR_ERR("init setting fail, ret=%d\n",  ret);
+			SENSOR_ERR("init setting fail, ret=%d\n", ret);
 			return ret;
 		}
 	}
@@ -631,15 +688,16 @@ static int32_t stk3013_enable_ps(struct device *dev, uint8_t enable, uint8_t val
 		stk3013_set_ps_offset(ps_data, ps_data->ps_offset);
 #endif
 		enable_irq(ps_data->irq);
-		ps_data->ps_enabled = true;
 #ifdef STK_CHK_REG
 		if (!validate_reg) {
 			ps_data->ps_distance_last = 1;
-			input_report_abs(ps_data->ps_input_dev, ABS_DISTANCE, 1);
+			input_report_abs(ps_data->ps_input_dev,
+					ABS_DISTANCE, 1);
 			input_sync(ps_data->ps_input_dev);
-			wake_lock_timeout(&ps_data->ps_wakelock, 3*HZ);
+			wake_lock_timeout(&ps_data->ps_wakelock, 3 * HZ);
 			read_value = stk3013_get_ps_reading(ps_data);
-			SENSOR_INFO(" force report ps input event=1, ps code = %d\n",  read_value);
+			SENSOR_INFO("force report ps input event=1, ps code=%d\n",
+					read_value);
 		} else
 #endif/* #ifdef STK_CHK_REG */
 		{
@@ -649,17 +707,19 @@ static int32_t stk3013_enable_ps(struct device *dev, uint8_t enable, uint8_t val
 				return ret;
 			near_far_state = ret & STK_FLG_NF_MASK;
 			ps_data->ps_distance_last = near_far_state;
-			input_report_abs(ps_data->ps_input_dev, ABS_DISTANCE, enable);
+			input_report_abs(ps_data->ps_input_dev,
+					ABS_DISTANCE, near_far_state);
 			input_sync(ps_data->ps_input_dev);
 			wake_lock_timeout(&ps_data->ps_wakelock, 3*HZ);
 			read_value = stk3013_get_ps_reading(ps_data);
-			SENSOR_INFO(" ps input event=%d, ps code = %d\n",  near_far_state, read_value);
+			SENSOR_INFO("ps input event=%d, ps code = %d\n",
+					near_far_state, read_value);
 		}
 	} else {
 		disable_irq(ps_data->irq);
-		msleep(120);
+		if(ps_data->pdata->vled_ldo)
+			stk3013_vled_onoff(dev,OFF);
 		/*stk3013_regulator_onoff(dev, OFF);*/
-		ps_data->ps_enabled = false;
 	}
 	return ret;
 }
@@ -673,50 +733,52 @@ static int stk3013_chk_reg_valid(struct stk3013_data *ps_data)
 	uint8_t cnt;
 	for(cnt=0;cnt<9;cnt++)
 	{
-		value[cnt] = stk3013_i2c_smbus_read_byte_data(ps_data->client, (cnt+1));
+		value[cnt] = stk3013_i2c_smbus_read_byte_data(ps_data->client,
+			(cnt+1));
 		if (value[cnt] < 0)
 		{
-			SENSOR_ERR("%s fail, ret=%d",  value[cnt]);
+			SENSOR_ERR("%s fail, ret=%d", value[cnt]);
 			return value[cnt];
 		}
 	}
 	*/
-	ret = stk3013_i2c_read_data(ps_data->client, STK_PSCTRL_REG, 9, &value[0]);
+	ret = stk3013_i2c_read_data(ps_data->client,
+			STK_PSCTRL_REG, 9, &value[0]);
 	if (ret < 0) {
-		SENSOR_ERR("fail, ret=%d\n",  ret);
+		SENSOR_ERR(" fail, ret=%d\n", ret);
 		return ret;
 	}
 
 	if (value[0] != ps_data->psctrl_reg) {
-		SENSOR_ERR("invalid reg 0x01=0x%2x\n",  value[0]);
+		SENSOR_ERR(" invalid reg 0x01=0x%2x\n", value[0]);
 		return 0xFF;
 	}
 	if (value[2] != ps_data->ledctrl_reg) {
-		SENSOR_ERR("invalid reg 0x03=0x%2x\n",  value[2]);
+		SENSOR_ERR(" invalid reg 0x03=0x%2x\n", value[2]);
 		return 0xFF;
 	}
 	if (value[3] != ps_data->int_reg) {
-		SENSOR_ERR("invalid reg 0x04=0x%2x\n",  value[3]);
+		SENSOR_ERR(" invalid reg 0x04=0x%2x\n", value[3]);
 		return 0xFF;
 	}
 	if (value[4] != ps_data->wait_reg) {
-		SENSOR_ERR("invalid reg 0x05=0x%2x\n",  value[4]);
+		SENSOR_ERR(" invalid reg 0x05=0x%2x\n", value[4]);
 		return 0xFF;
 	}
 	if (value[5] != ((ps_data->ps_thd_h & 0xFF00) >> 8)) {
-		SENSOR_ERR("invalid reg 0x06=0x%2x\n",  value[5]);
+		SENSOR_ERR(" invalid reg 0x06=0x%2x\n", value[5]);
 		return 0xFF;
 	}
 	if (value[6] != (ps_data->ps_thd_h & 0x00FF)) {
-		SENSOR_ERR("invalid reg 0x07=0x%2x\n",  value[6]);
+		SENSOR_ERR(" invalid reg 0x07=0x%2x\n", value[6]);
 		return 0xFF;
 	}
 	if (value[7] != ((ps_data->ps_thd_l & 0xFF00) >> 8)) {
-		SENSOR_ERR("invalid reg 0x08=0x%2x\n",  value[7]);
+		SENSOR_ERR(" invalid reg 0x08=0x%2x\n", value[7]);
 		return 0xFF;
 	}
 	if (value[8] != (ps_data->ps_thd_l & 0x00FF)) {
-		SENSOR_ERR("invalid reg 0x09=0x%2x\n",  value[8]);
+		SENSOR_ERR(" invalid reg 0x09=0x%2x\n", value[8]);
 		return 0xFF;
 	}
 
@@ -751,7 +813,7 @@ static int stk3013_validate_n_handle(struct i2c_client *client)
 	return 0;
 }
 #endif /* #ifdef STK_CHK_REG */
-/* sysfs for vendor & name */
+
 #ifdef PROXIMITY_CALIBRATION
 static int proximity_store_calibration(struct device *dev, bool do_calib)
 {
@@ -761,38 +823,43 @@ static int proximity_store_calibration(struct device *dev, bool do_calib)
 	unsigned char value[2];
 	int ret;
 	uint16_t temp[2];
-	uint16_t offset_data=0;
+	uint16_t offset_data = 0;
 
 	SENSOR_INFO("start\n");
 
 	if (do_calib) {
-		ret = stk3013_i2c_read_data(ps_data->client, STK_DATA1_PS_REG, 2, &value[0]);
+		ret = stk3013_i2c_read_data(ps_data->client,
+				STK_DATA1_PS_REG, 2, &value[0]);
 		if (ret < 0) {
-			SENSOR_ERR("DATA1 fail, ret=%d\n",  ret);
+			SENSOR_ERR("DATA1 fail, ret=%d\n", ret);
 			return ret;
 		}
 		offset_data = ((value[0]<<8) | value[1]);
-		SENSOR_INFO("ps_offset =  %d\n",  offset_data);
-		if(offset_data < ps_data->ps_cal_skip_adc) {
-			SENSOR_INFO("skip calibration =  %d\n",  offset_data);
+		SENSOR_INFO("ps_offset =  %d\n", offset_data);
+		if (offset_data < ps_data->ps_cal_skip_adc) {
+			SENSOR_INFO("skip calibration = %d\n", offset_data);
 			ps_data->ps_offset = ps_data->ps_default_offset;
 			ps_data->cal_result = 2;
 		} else if (offset_data <= ps_data->ps_cal_fail_adc/*DO_CAL*/) {
-			SENSOR_INFO("do calibration =  %d\n",  offset_data);
+			SENSOR_INFO("do calibration =  %d\n", offset_data);
 			temp[0] = ps_data->ps_default_offset;
 			ps_data->ps_offset = offset_data + ps_data->ps_default_offset;
-			ret = stk3013_set_ps_offset(ps_data, ps_data->ps_offset);
+			ret = stk3013_set_ps_offset(ps_data,
+					ps_data->ps_offset);
 			if (ret < 0) {
 				SENSOR_ERR("calibration fail\n");
 				ps_data->ps_default_offset = temp[0];
 				ps_data->cal_result = 0;
 			} else {
-				stk3013_set_ps_thd_h(ps_data, ps_data->ps_cancel_thd_h);
-				stk3013_set_ps_thd_l(ps_data, ps_data->ps_cancel_thd_l);
+				stk3013_set_ps_thd_h(ps_data,
+					ps_data->ps_cancel_thd_h);
+				stk3013_set_ps_thd_l(ps_data,
+					ps_data->ps_cancel_thd_l);
 				ps_data->cal_result = 1;
 			}
 		} else {
-			SENSOR_INFO("fail offset calibration =  %d\n",  offset_data);
+			SENSOR_INFO("fail offset calibration = %d\n",
+					offset_data);
 			ps_data->ps_offset = ps_data->ps_default_offset;
 		}
 	} else {
@@ -808,7 +875,9 @@ static int proximity_store_calibration(struct device *dev, bool do_calib)
 			ps_data->ps_default_offset = temp[0];
 			ps_data->cal_result = temp[1];
 		}
-		SENSOR_INFO(" ps_thd_h=%d, ps_thd_l=%d, ps_offset=%d\n", ps_data->ps_thd_h,ps_data->ps_thd_l, ps_data->ps_offset);
+		SENSOR_INFO("ps_thd_h=%d, ps_thd_l=%d, ps_offset=%d\n",
+				ps_data->ps_thd_h, ps_data->ps_thd_l,
+				ps_data->ps_offset);
 		stk3013_set_ps_thd_h(ps_data, ps_data->ps_default_thd_h);
 		stk3013_set_ps_thd_l(ps_data, ps_data->ps_default_thd_l);
 	}
@@ -850,10 +919,10 @@ static ssize_t proximity_calibration_store(struct device *dev,
 	else if (sysfs_streq(buf, "0")) /* reset cancelation value */
 		do_calib = false;
 	else {
-		SENSOR_ERR("invalid value %d\n",  *buf);
+		SENSOR_ERR("invalid value %d\n", *buf);
 		return -EINVAL;
 	}
-	SENSOR_INFO("%d\n",  do_calib);
+	SENSOR_INFO("%d\n", do_calib);
 	err = proximity_store_calibration(dev, do_calib);
 	if (err < 0) {
 		SENSOR_ERR("proximity_store_cancelation() failed\n");
@@ -878,11 +947,11 @@ static ssize_t proximity_calibration_pass_show(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
 	struct stk3013_data *ps_data =  dev_get_drvdata(dev);
-	SENSOR_INFO("result = %d\n",  ps_data->cal_result);
+
+	SENSOR_INFO("result = %d\n", ps_data->cal_result);
 	return snprintf(buf, PAGE_SIZE, "%u\n",
 		ps_data->cal_result);
 }
-
 #endif
 
 static ssize_t proximity_avg_show(struct device *dev,
@@ -900,7 +969,7 @@ static void proximity_get_avg_val(struct stk3013_data *ps_data)
 	uint32_t read_value;
 
 	for (i = 0; i < PROX_READ_NUM; i++) {
-		msleep(40);
+		usleep_range(40000,40000);
 		read_value = stk3013_get_ps_reading(ps_data);
 		avg += read_value;
 
@@ -918,6 +987,7 @@ static void proximity_get_avg_val(struct stk3013_data *ps_data)
 	ps_data->avg[1] = avg;
 	ps_data->avg[2] = max;
 }
+
 static ssize_t proximity_avg_store(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t size)
 {
@@ -929,13 +999,14 @@ static ssize_t proximity_avg_store(struct device *dev,
 	else if (sysfs_streq(buf, "0"))
 		new_value = false;
 	else {
-		SENSOR_ERR("invalid value %d\n",  *buf);
+		SENSOR_ERR("invalid value %d\n", *buf);
 		return -EINVAL;
 	}
 
 	SENSOR_INFO("average enable = %d\n",  new_value);
+
 	if (new_value) {
-		if ((ps_data->ps_enabled ? 1 : 0) == OFF) {
+		if (!ps_data->ps_enabled && !ps_data->ps_alert_enabled) {
 			mutex_lock(&ps_data->io_lock);
 			stk3013_enable_ps(dev, new_value, 1);
 			mutex_unlock(&ps_data->io_lock);
@@ -945,7 +1016,7 @@ static ssize_t proximity_avg_store(struct device *dev,
 	} else if (!new_value) {
 		hrtimer_cancel(&ps_data->prox_timer);
 		cancel_work_sync(&ps_data->work_prox);
-		if ((ps_data->ps_enabled ? 1 : 0) == OFF) {
+		if (!ps_data->ps_enabled && !ps_data->ps_alert_enabled) {
 			mutex_lock(&ps_data->io_lock);
 			stk3013_enable_ps(dev, new_value, 0);
 			mutex_unlock(&ps_data->io_lock);
@@ -959,16 +1030,17 @@ static ssize_t proximity_trim_show(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
 	struct stk3013_data *ps_data =  dev_get_drvdata(dev);
-	SENSOR_INFO("trim: %d\n",ps_data->ps_default_offset);
+
+	SENSOR_INFO("trim: %d\n", ps_data->ps_default_offset);
 	return snprintf(buf, PAGE_SIZE, "%u\n",
 		ps_data->ps_default_offset);
 }
-
 
 static void stk3013_work_func_prox(struct work_struct *work)
 {
 	struct stk3013_data *ps_data = container_of(work,
 		struct stk3013_data, work_prox);
+
 	proximity_get_avg_val(ps_data);
 }
 
@@ -976,23 +1048,59 @@ static enum hrtimer_restart stk3013_prox_timer_func(struct hrtimer *timer)
 {
 	struct stk3013_data *ps_data = container_of(timer,
 		struct stk3013_data, prox_timer);
+
 	queue_work(ps_data->prox_wq, &ps_data->work_prox);
 	hrtimer_forward_now(&ps_data->prox_timer, ps_data->prox_poll_delay);
 	return HRTIMER_RESTART;
 }
 
-static ssize_t proximity_thresh_high_show(struct device *dev, struct device_attribute *attr, char *buf)
+static void stk3013_work_func_prox_alert(struct work_struct *work)
+{
+	struct stk3013_data *ps_data = container_of(work,
+		struct stk3013_data, work_prox_alert);
+	uint32_t prox_adc;
+
+	prox_adc = stk3013_get_ps_reading(ps_data);
+
+	/* FAR(0), CLOSE(1) for IRIS Service */
+	if (prox_adc >= ps_data->ps_alert_thd) {
+		input_report_rel(ps_data->ps_alert_input_dev, REL_MISC, 2);
+		input_sync(ps_data->ps_alert_input_dev);
+		SENSOR_INFO("prox_alert close (%d)\n", prox_adc);
+	} else {
+		input_report_rel(ps_data->ps_alert_input_dev, REL_MISC, 1);
+		input_sync(ps_data->ps_alert_input_dev);
+		SENSOR_INFO("prox_alert far (%d)\n", prox_adc);
+	}
+}
+
+static enum hrtimer_restart stk3013_prox_alert_timer_func(struct hrtimer *timer)
+{
+	struct stk3013_data *ps_data = container_of(timer,
+		struct stk3013_data, prox_alert_timer);
+
+	queue_work(ps_data->prox_alert_wq, &ps_data->work_prox_alert);
+	hrtimer_forward_now(&ps_data->prox_alert_timer, ns_to_ktime(PROX_ALERT_DELAY));
+
+	return HRTIMER_RESTART;
+}
+
+static ssize_t proximity_thresh_high_show(struct device *dev,
+	struct device_attribute *attr, char *buf)
 {
 	int32_t ps_thd_h1_reg, ps_thd_h2_reg;
 	struct stk3013_data *ps_data =  dev_get_drvdata(dev);
-	ps_thd_h1_reg = stk3013_i2c_smbus_read_byte_data(ps_data->client, STK_THDH1_PS_REG);
+
+	ps_thd_h1_reg = stk3013_i2c_smbus_read_byte_data(ps_data->client,
+							STK_THDH1_PS_REG);
 	if (ps_thd_h1_reg < 0) {
-		SENSOR_ERR("fail, err=0x%x",  ps_thd_h1_reg);
+		SENSOR_ERR("fail, err=0x%x", ps_thd_h1_reg);
 		return -EINVAL;
 	}
-	ps_thd_h2_reg = stk3013_i2c_smbus_read_byte_data(ps_data->client, STK_THDH2_PS_REG);
+	ps_thd_h2_reg = stk3013_i2c_smbus_read_byte_data(ps_data->client,
+							STK_THDH2_PS_REG);
 	if (ps_thd_h2_reg < 0) {
-		SENSOR_ERR("fail, err=0x%x",  ps_thd_h2_reg);
+		SENSOR_ERR("fail, err=0x%x", ps_thd_h2_reg);
 		return -EINVAL;
 	}
 	ps_thd_h1_reg = ps_thd_h1_reg<<8 | ps_thd_h2_reg;
@@ -1000,14 +1108,16 @@ static ssize_t proximity_thresh_high_show(struct device *dev, struct device_attr
 	return scnprintf(buf, PAGE_SIZE, "%d\n", ps_thd_h1_reg);
 }
 
-static ssize_t proximity_thresh_high_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t size)
+static ssize_t proximity_thresh_high_store(struct device *dev,
+	struct device_attribute *attr, const char *buf, size_t size)
 {
 	struct stk3013_data *ps_data =  dev_get_drvdata(dev);
 	u16 value = 0;
 	int ret;
+
 	ret = kstrtou16(buf, 10, &value);
 	if (ret < 0) {
-		SENSOR_ERR("kstrtoul failed, ret=0x%x\n",  ret);
+		SENSOR_ERR("kstrtoul failed, ret=0x%x\n", ret);
 		return ret;
 	}
 	SENSOR_INFO("thresh: %d\n",  value);
@@ -1015,43 +1125,52 @@ static ssize_t proximity_thresh_high_store(struct device *dev, struct device_att
 	return size;
 }
 
-static ssize_t proximity_thresh_low_show(struct device *dev, struct device_attribute *attr, char *buf)
+static ssize_t proximity_thresh_low_show(struct device *dev,
+	struct device_attribute *attr, char *buf)
 {
 	int32_t ps_thd_l1_reg, ps_thd_l2_reg;
-	struct stk3013_data *ps_data =  dev_get_drvdata(dev);
-	ps_thd_l1_reg = stk3013_i2c_smbus_read_byte_data(ps_data->client, STK_THDL1_PS_REG);
+	struct stk3013_data *ps_data = dev_get_drvdata(dev);
+
+	ps_thd_l1_reg = stk3013_i2c_smbus_read_byte_data(ps_data->client,
+							STK_THDL1_PS_REG);
 	if (ps_thd_l1_reg < 0) {
-		SENSOR_ERR("fail, err=0x%x",  ps_thd_l1_reg);
+		SENSOR_ERR("fail, err=0x%x", ps_thd_l1_reg);
 		return -EINVAL;
 	}
-	ps_thd_l2_reg = stk3013_i2c_smbus_read_byte_data(ps_data->client, STK_THDL2_PS_REG);
+	ps_thd_l2_reg = stk3013_i2c_smbus_read_byte_data(ps_data->client,
+							STK_THDL2_PS_REG);
 	if (ps_thd_l2_reg < 0) {
-		SENSOR_ERR("fail, err=0x%x",  ps_thd_l2_reg);
+		SENSOR_ERR("fail, err=0x%x", ps_thd_l2_reg);
 		return -EINVAL;
 	}
 	ps_thd_l1_reg = ps_thd_l1_reg<<8 | ps_thd_l2_reg;
+
 	return scnprintf(buf, PAGE_SIZE, "%d\n", ps_thd_l1_reg);
 }
 
-static ssize_t proximity_thresh_low_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t size)
+static ssize_t proximity_thresh_low_store(struct device *dev,
+	struct device_attribute *attr, const char *buf, size_t size)
 {
 	struct stk3013_data *ps_data =  dev_get_drvdata(dev);
 	u16 value = 0;
 	int ret;
+
 	ret = kstrtou16(buf, 10, &value);
 	if (ret < 0) {
-		SENSOR_ERR("kstrtoul failed, ret=0x%x\n",  ret);
+		SENSOR_ERR("kstrtoul failed, ret=0x%x\n", ret);
 		return ret;
 	}
-	SENSOR_INFO("thresh: %d\n",  value);
+	SENSOR_INFO("thresh: %d\n", value);
 	stk3013_set_ps_thd_l(ps_data, value);
 	return size;
 }
 
-static ssize_t proximity_state_show(struct device *dev, struct device_attribute *attr, char *buf)
+static ssize_t proximity_state_show(struct device *dev,
+	struct device_attribute *attr, char *buf)
 {
 	struct stk3013_data *ps_data =  dev_get_drvdata(dev);
 	uint32_t read_value;
+
 	read_value = stk3013_get_ps_reading(ps_data);
 	return scnprintf(buf, PAGE_SIZE, "%d\n", read_value);
 }
@@ -1067,6 +1186,14 @@ static ssize_t stk3013_name_show(struct device *dev,
 {
 	return snprintf(buf, PAGE_SIZE, "%s\n", CHIP_ID);
 }
+
+static ssize_t stk3013_alert_thd_show(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	struct stk3013_data *ps_data =  dev_get_drvdata(dev);
+	return scnprintf(buf, PAGE_SIZE, "%d\n", ps_data->ps_alert_thd);
+}
+
 #ifdef PROXIMITY_CALIBRATION
 static DEVICE_ATTR(prox_cal, S_IRUGO | S_IWUSR | S_IWGRP,
 	proximity_calibration_show, proximity_calibration_store);
@@ -1075,7 +1202,7 @@ static DEVICE_ATTR(prox_offset_pass, S_IRUGO, proximity_calibration_pass_show,
 #endif
 static DEVICE_ATTR(prox_avg, S_IRUGO | S_IWUSR | S_IWGRP,
 	proximity_avg_show, proximity_avg_store);
-static DEVICE_ATTR(prox_trim, S_IRUSR | S_IRGRP,
+static DEVICE_ATTR(prox_trim, S_IRUGO,
 	proximity_trim_show, NULL);
 static DEVICE_ATTR(thresh_high, S_IRUGO | S_IWUSR | S_IWGRP,
 	proximity_thresh_high_show, proximity_thresh_high_store);
@@ -1083,8 +1210,9 @@ static DEVICE_ATTR(thresh_low, S_IRUGO | S_IWUSR | S_IWGRP,
 	proximity_thresh_low_show, proximity_thresh_low_store);
 static DEVICE_ATTR(state, S_IRUGO, proximity_state_show, NULL);
 static DEVICE_ATTR(raw_data, S_IRUGO, proximity_state_show, NULL);
-static DEVICE_ATTR(vendor, S_IRUSR | S_IRGRP, stk3013_vendor_show, NULL);
-static DEVICE_ATTR(name, S_IRUSR | S_IRGRP, stk3013_name_show, NULL);
+static DEVICE_ATTR(vendor, S_IRUGO, stk3013_vendor_show, NULL);
+static DEVICE_ATTR(name, S_IRUGO, stk3013_name_show, NULL);
+static DEVICE_ATTR(alert_thd, S_IRUGO, stk3013_alert_thd_show, NULL);
 
 static struct device_attribute *prox_sensor_attrs[] = {
 #ifdef PROXIMITY_CALIBRATION
@@ -1102,20 +1230,18 @@ static struct device_attribute *prox_sensor_attrs[] = {
 	NULL,
 };
 
-static ssize_t proximity_enable_show(struct device *dev, struct device_attribute *attr, char *buf)
+static struct device_attribute *prox_alert_sensor_attrs[] = {
+	&dev_attr_name,
+	&dev_attr_alert_thd,
+	NULL,
+};
+
+static ssize_t proximity_enable_show(struct device *dev,
+	struct device_attribute *attr, char *buf)
 {
 	int32_t ret;
 	struct stk3013_data *ps_data =  dev_get_drvdata(dev);
-	/*unsigned char value[10];
-	uint8_t cnt;
-	for (cnt = 0; cnt < 10; cnt++) {
-		value[cnt] = stk3013_i2c_smbus_read_byte_data(ps_data->client, cnt);
-		printk(KERN_ERR "0x%x = 0x%x\n", cnt, value[cnt]);
-		if (value[cnt] < 0) {
-			SENSOR_ERR("fail, ret=%d\n",  value[cnt]);
-			return value[cnt];
-		}
-	}*/
+
 	ret = stk3013_get_state(ps_data);
 	if (ret < 0)
 		return ret;
@@ -1124,24 +1250,100 @@ static ssize_t proximity_enable_show(struct device *dev, struct device_attribute
 	return scnprintf(buf, PAGE_SIZE, "%d\n", ret);
 }
 
-static ssize_t proximity_enable_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t size)
+static ssize_t proximity_enable_store(struct device *dev,
+	struct device_attribute *attr, const char *buf, size_t size)
 {
-	struct stk3013_data *ps_data =  dev_get_drvdata(dev);
+	struct stk3013_data *ps_data = dev_get_drvdata(dev);
 	uint8_t en;
+	int ret = 0;
+	uint32_t prox_adc;
+	uint8_t near_far_state;
+
 	if (sysfs_streq(buf, "1"))
 		en = 1;
 	else if (sysfs_streq(buf, "0"))
 		en = 0;
 	else {
-		SENSOR_ERR("invalid value %d\n",  *buf);
+		SENSOR_ERR("invalid value %d\n", *buf);
 		return -EINVAL;
 	}
-	SENSOR_INFO(" Enable PS : %d\n",  en);
+
+	SENSOR_INFO("Enable PS en : %d, old_en : %d\n", en, ps_data->ps_enabled);
+
+	if (en == ps_data->ps_enabled)
+		return 0;
+
+	// If prox alert is already ON, report first near/far event for prox sensor
+	if (ps_data->ps_alert_enabled) {
+		prox_adc = stk3013_get_ps_reading(ps_data);
+		near_far_state = (prox_adc >= ps_data->ps_thd_h) ? 0 : 1;
+		input_report_abs(ps_data->ps_input_dev, ABS_DISTANCE, near_far_state);
+		input_sync(ps_data->ps_input_dev);
+	}
+
 	mutex_lock(&ps_data->io_lock);
-	stk3013_enable_ps(dev, en, 1);
+
+	ret = stk3013_enable_ps(dev, en, 1);
+	if (ret >= 0)
+		ps_data->ps_enabled = en;
+
 	mutex_unlock(&ps_data->io_lock);
-	return size;
+
+	return ret < 0 ? ret : 0;
 }
+
+static ssize_t proximity_alert_enable_show(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	struct stk3013_data *ps_data =  dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%d\n", ps_data->ps_alert_enabled);
+}
+
+static ssize_t proximity_alert_enable_store(struct device *dev,
+	struct device_attribute *attr, const char *buf, size_t size)
+{
+	struct stk3013_data *ps_data = dev_get_drvdata(dev);
+	uint8_t en;
+	int ret = 0;
+
+	if (sysfs_streq(buf, "1"))
+		en = 1;
+	else if (sysfs_streq(buf, "0"))
+		en = 0;
+	else {
+		SENSOR_ERR("invalid value %d\n", *buf);
+		return -EINVAL;
+	}
+
+	SENSOR_INFO("Enable PS Alert en : %d, old_en : %d\n", en, ps_data->ps_alert_enabled);
+
+	if (en == ps_data->ps_alert_enabled)
+		return 0;
+
+	mutex_lock(&ps_data->io_lock);
+
+	if (en) {
+		ret = stk3013_enable_ps(dev, en, 1);
+		if (ret >= 0) {
+			hrtimer_start(&ps_data->prox_alert_timer,
+				ns_to_ktime(PROX_ALERT_DELAY), HRTIMER_MODE_REL);
+			ps_data->ps_alert_enabled = en;
+		}
+	} else {
+		hrtimer_cancel(&ps_data->prox_alert_timer);
+		cancel_work_sync(&ps_data->work_prox_alert);
+		ret = stk3013_enable_ps(dev, en, 1);
+		if (ret >= 0) {
+			ps_data->ps_alert_enabled = en;
+		}
+	}
+
+	mutex_unlock(&ps_data->io_lock);
+
+	return ret < 0 ? ret : 0;
+}
+
 static DEVICE_ATTR(enable, S_IRUGO | S_IWUSR | S_IWGRP,
 	proximity_enable_show, proximity_enable_store);
 
@@ -1154,6 +1356,19 @@ static struct attribute_group proximity_attribute_group = {
 	.attrs = proximity_sysfs_attrs,
 };
 
+static struct device_attribute dev_attr_prox_alert_enable =
+	__ATTR(enable, S_IRUGO | S_IWUSR | S_IWGRP,
+	proximity_alert_enable_show, proximity_alert_enable_store);
+
+static struct attribute *proximity_alert_sysfs_attrs[] = {
+	&dev_attr_prox_alert_enable.attr,
+	NULL
+};
+
+static struct attribute_group proximity_alert_attribute_group = {
+	.attrs = proximity_alert_sysfs_attrs,
+};
+
 static void stk_work_func(struct work_struct *work)
 {
 	uint32_t read_value;
@@ -1162,24 +1377,24 @@ static void stk_work_func(struct work_struct *work)
 	uint8_t disable_flag = 0;
 	int32_t org_flag_reg;
 #endif/* #if ((STK_INT_PS_MODE != 0x03) && (STK_INT_PS_MODE != 0x02)) */
-
-	struct stk3013_data *ps_data = container_of(work, struct stk3013_data, stk_work);
+	struct stk3013_data *ps_data = container_of(work,
+				struct stk3013_data, stk_work);
 	int32_t near_far_state;
-#if (STK_INT_PS_MODE	== 0x03)
+
+#if (STK_INT_PS_MODE == 0x03)
 	near_far_state = gpio_get_value(ps_data->int_pin);
-#elif	(STK_INT_PS_MODE	== 0x02)
+#elif (STK_INT_PS_MODE == 0x02)
 	near_far_state = !(gpio_get_value(ps_data->int_pin));
 #endif
 
-#if ((STK_INT_PS_MODE == 0x03) || (STK_INT_PS_MODE	== 0x02))
+#if ((STK_INT_PS_MODE == 0x03) || (STK_INT_PS_MODE == 0x02))
 	ps_data->ps_distance_last = near_far_state;
 	input_report_abs(ps_data->ps_input_dev, ABS_DISTANCE, near_far_state);
 	input_sync(ps_data->ps_input_dev);
-	wake_lock_timeout(&ps_data->ps_wakelock, 3*HZ);
+	wake_lock_timeout(&ps_data->ps_wakelock, 3 * HZ);
 	read_value = stk3013_get_ps_reading(ps_data);
-#ifdef STK_DEBUG_PRINTF
-	SENSOR_INFO(" ps input event %d cm, ps code = %d\n",  near_far_state, read_value);
-#endif
+	SENSOR_INFO("ps input event %d cm, ps code = %d\n",
+			near_far_state, read_value);
 #else
 	/* mode 0x01 or 0x04 */
 	org_flag_reg = stk3013_get_flag(ps_data);
@@ -1189,13 +1404,23 @@ static void stk_work_func(struct work_struct *work)
 		disable_flag |= STK_FLG_PSINT_MASK;
 		near_far_state = (org_flag_reg & STK_FLG_NF_MASK) ? 1 : 0;
 		ps_data->ps_distance_last = near_far_state;
-		input_report_abs(ps_data->ps_input_dev, ABS_DISTANCE, near_far_state);
-		input_sync(ps_data->ps_input_dev);
-		wake_lock_timeout(&ps_data->ps_wakelock, 3*HZ);
 		read_value = stk3013_get_ps_reading(ps_data);
-#ifdef STK_DEBUG_PRINTF
-		SENSOR_INFO(" ps input event=%d, ps code = %d\n",  near_far_state, read_value);
+
+#ifdef CONFIG_SEC_FACTORY
+		SENSOR_INFO("FACTORY: near/far=%d, ps code = %d\n",
+				near_far_state, read_value);
+#else
+		SENSOR_INFO("near/far=%d, ps code = %d\n",
+				near_far_state, read_value);
+		if ((near_far_state == 0 && read_value >= ps_data->ps_thd_h)
+			|| (near_far_state == 1 && read_value <= ps_data->ps_thd_l))
 #endif
+		{
+			input_report_abs(ps_data->ps_input_dev,
+					ABS_DISTANCE, near_far_state);
+			input_sync(ps_data->ps_input_dev);
+			wake_lock_timeout(&ps_data->ps_wakelock, 3 * HZ);
+		}
 	}
 
 	if (disable_flag) {
@@ -1204,26 +1429,35 @@ static void stk_work_func(struct work_struct *work)
 			goto err_i2c_rw;
 	}
 #endif
+
+	// For quick response, report prox alert event upon prox close event
+	if (ps_data->ps_alert_enabled) {
+		if ((near_far_state == 0) && (read_value >= ps_data->ps_alert_thd)) {
+			input_report_rel(ps_data->ps_alert_input_dev, REL_MISC, 2);
+			input_sync(ps_data->ps_alert_input_dev);
+		}
+	}
+
 	usleep_range(1000, 2000);
-	/*msleep(1);*/
-	enable_irq(ps_data->irq);
-	return;
+	goto exit;
 
 err_i2c_rw:
-	msleep(30);
+	usleep_range(30000,30000);
+exit:
 	enable_irq(ps_data->irq);
-	return;
 }
 
 static irqreturn_t stk_oss_irq_handler(int irq, void *data)
 {
 	struct stk3013_data *pData = data;
+
 	disable_irq_nosync(irq);
 	queue_work(pData->stk_wq, &pData->stk_work);
 	return IRQ_HANDLED;
 }
 
-static int32_t stk3013_init_all_setting(struct i2c_client *client, struct stk3013_platform_data *plat_data)
+static int32_t stk3013_init_all_setting(struct i2c_client *client,
+				struct stk3013_platform_data *plat_data)
 {
 	int32_t ret;
 	struct stk3013_data *ps_data = i2c_get_clientdata(client);
@@ -1235,12 +1469,11 @@ static int32_t stk3013_init_all_setting(struct i2c_client *client, struct stk301
 	ret = stk3013_check_pid(ps_data);
 	if (ret < 0)
 		return ret;
+
 	stk3013_proc_plat_data(ps_data, plat_data);
 	ret = stk3013_init_all_reg(ps_data);
 	if (ret < 0)
 		return ret;
-	ps_data->ps_enabled = false;
-	ps_data->re_enable_ps = false;
 	ps_data->ir_code = 0;
 	ps_data->first_boot = true;
 
@@ -1256,31 +1489,36 @@ static int stk3013_setup_irq(struct i2c_client *client)
 
 	irq = gpio_to_irq(ps_data->int_pin);
 
-#ifdef STK_DEBUG_PRINTF
-	SENSOR_INFO(" int pin #=%d, irq=%d\n",  ps_data->int_pin, irq);
-#endif
+	SENSOR_INFO("int pin #=%d, irq=%d\n", ps_data->int_pin, irq);
+
 	if (irq <= 0) {
-		SENSOR_ERR("irq number is not specified, irq # = %d, int pin=%d\n", irq, ps_data->int_pin);
+		SENSOR_ERR("irq number is not specified, irq=%d, int pin=%d\n",
+				irq, ps_data->int_pin);
 		return irq;
 	}
 	ps_data->irq = irq;
 	ret = gpio_request(ps_data->int_pin, "stk-int");
 	if (ret < 0) {
-		SENSOR_ERR("gpio_request, err=%d",  ret);
+		SENSOR_ERR("gpio_request, err=%d", ret);
 		return ret;
 	}
 	ret = gpio_direction_input(ps_data->int_pin);
 	if (ret < 0) {
-		SENSOR_ERR("gpio_direction_input, err=%d",  ret);
+		SENSOR_ERR("gpio_direction_input, err=%d", ret);
 		return ret;
 	}
-#if ((STK_INT_PS_MODE == 0x03) || (STK_INT_PS_MODE	== 0x02))
-	ret = request_any_context_irq(irq, stk_oss_irq_handler, IRQF_TRIGGER_FALLING|IRQF_TRIGGER_RISING,  "proximity_int", ps_data);
+
+#if ((STK_INT_PS_MODE == 0x03) || (STK_INT_PS_MODE == 0x02))
+	ret = request_any_context_irq(irq, stk_oss_irq_handler,
+			IRQF_TRIGGER_FALLING | IRQF_TRIGGER_RISING,
+			"proximity_int", ps_data);
 #else
-	ret = request_any_context_irq(irq, stk_oss_irq_handler, IRQF_TRIGGER_LOW, "proximity_int", ps_data);
+	ret = request_any_context_irq(irq, stk_oss_irq_handler,
+			IRQF_TRIGGER_LOW, "proximity_int", ps_data);
 #endif
 	if (ret < 0) {
-		SENSOR_WARN("request_any_context_irq(%d) failed for (%d)\n",irq, ret);
+		SENSOR_WARN("request_any_context_irq(%d) failed for (%d)\n",
+				irq, ret);
 		goto err_request_any_context_irq;
 	}
 	disable_irq(irq);
@@ -1309,11 +1547,19 @@ static int stk3013_suspend(struct device *dev)
 			stk3013_enable_ps(ps_data, 1, 0);
 	}
 #endif /* #ifdef STK_CHK_REG */
+
+	if (ps_data->ps_alert_enabled) {
+		hrtimer_cancel(&ps_data->prox_alert_timer);
+		cancel_work_sync(&ps_data->work_prox_alert);
+		stk3013_enable_ps(dev, 0, 0);
+	}
+
 	if (ps_data->ps_enabled) {
 		if (device_may_wakeup(&client->dev)) {
 			ret = enable_irq_wake(ps_data->irq);
 			if (ret)
-				SENSOR_WARN("set_irq_wake(%d) failed, err=(%d)\n", ps_data->irq, ret);
+				SENSOR_WARN("set_irq_wake(%d) failed(%d)\n",
+						ps_data->irq, ret);
 		} else {
 			SENSOR_ERR("not support wakeup source");
 		}
@@ -1346,8 +1592,17 @@ static int stk3013_resume(struct device *dev)
 		if (device_may_wakeup(&client->dev)) {
 			ret = disable_irq_wake(ps_data->irq);
 			if (ret)
-				SENSOR_WARN("disable_irq_wake(%d) failed, err=(%d)\n", ps_data->irq, ret);
+				SENSOR_WARN("disable_irq_wake(%d) fail(%d)\n",
+						ps_data->irq, ret);
 		}
+	}
+	
+	if (ps_data->ps_alert_enabled) {
+		ps_data->ps_alert_enabled = 0; // state check disable
+		stk3013_enable_ps(dev, 1, 0);
+		hrtimer_start(&ps_data->prox_alert_timer,
+			ns_to_ktime(PROX_ALERT_DELAY), HRTIMER_MODE_REL);
+		ps_data->ps_alert_enabled = 1; // state check enable
 	}
 
 	mutex_unlock(&ps_data->io_lock);
@@ -1364,7 +1619,7 @@ static int stk3013_regulator_onoff(struct device *dev, bool onoff)
 	struct stk3013_data *ps_data = dev_get_drvdata(dev);
 	int ret;
 
-	SENSOR_INFO("%s\n",  (onoff) ? "on" : "off");
+	SENSOR_INFO("%s\n", (onoff) ? "on" : "off");
 
 	if (!ps_data->vdd || IS_ERR(ps_data->vdd)) {
 		SENSOR_INFO("VDD get regulator\n");
@@ -1373,7 +1628,7 @@ static int stk3013_regulator_onoff(struct device *dev, bool onoff)
 			SENSOR_ERR("cannot get vdd\n");
 			return -ENOMEM;
 		}
-		regulator_set_voltage(ps_data->vdd, 2850000, 2850000);
+		regulator_set_voltage(ps_data->vdd, 2800000,2800000);
 	}
 
 	if (!ps_data->vio || IS_ERR(ps_data->vio)) {
@@ -1391,35 +1646,53 @@ static int stk3013_regulator_onoff(struct device *dev, bool onoff)
 		ret = regulator_enable(ps_data->vdd);
 		if (ret)
 			SENSOR_ERR("Failed to enable vdd.\n");
-		msleep(20);
+		usleep_range(20000,20000);
 
 		ret = regulator_enable(ps_data->vio);
 		if (ret)
 			SENSOR_ERR("Failed to enable vio.\n");
-		msleep(20);
+		usleep_range(20000,20000);
 	} else {
 		ret = regulator_disable(ps_data->vdd);
 		if (ret)
 			SENSOR_ERR("Failed to disable vdd.\n");
-		msleep(20);
+		usleep_range(20000,20000);
 
 		ret = regulator_disable(ps_data->vio);
 		if (ret)
 			SENSOR_ERR("Failed to disable vio.\n");
-		msleep(20);
+		usleep_range(20000,20000);
 	}
 	return 0;
 }
 
-#ifdef CONFIG_OF
+static int stk3013_vled_onoff(struct device *dev, bool onoff)
+{
+	struct stk3013_data *ps_data = dev_get_drvdata(dev);
+
+	SENSOR_INFO("stk3013_vled_onoff %s\n",(onoff) ? "on" : "off");
+
+	/* ldo control */
+	if (ps_data->pdata->vled_ldo) {
+		gpio_set_value(ps_data->pdata->vled_ldo, onoff);	
+	}
+	return 0;
+}
+
 static int stk3013_parse_dt(struct device *dev,
 			struct stk3013_platform_data *pdata)
 {
 	int rc;
+	struct stk3013_data *ps_data = dev_get_drvdata(dev);
 	struct device_node *np = dev->of_node;
+	enum of_gpio_flags flags;
 	u32 temp_val;
 
-	pdata->int_pin = of_get_named_gpio_flags(np, "stk,irq-gpio", 0, &pdata->int_flags);
+	if (!pdata)
+		return -ENOMEM;
+
+	pdata->int_pin = of_get_named_gpio_flags(np, "stk,irq-gpio", 0,
+						&pdata->int_flags);
 	if (pdata->int_pin < 0) {
 		dev_err(dev, "Unable to read irq-gpio\n");
 		return pdata->int_pin;
@@ -1529,15 +1802,39 @@ static int stk3013_parse_dt(struct device *dev,
 		return rc;
 	}
 
+	rc = of_property_read_u32(np, "stk,ps-alert-mode-support", &temp_val);
+	if (!rc)
+		ps_data->ps_alert_mode_support = (u8) temp_val;
+	else {
+		dev_err(dev, "Unable to read ps-alert-mode-support\n");
+		ps_data->ps_alert_mode_support = 0;
+	}
+
+	rc = of_property_read_u32(np, "stk,ps-alert-thd", &temp_val);
+	if (!rc)
+		ps_data->ps_alert_thd = (u16) temp_val;
+	else {
+		dev_err(dev, "Unable to read ps-alert-thd\n");
+		ps_data->ps_alert_thd = 0;
+	}
+
+	pdata->vled_ldo = of_get_named_gpio_flags(np, "stk,vled_ldo",0, &flags);
+	if (pdata->vled_ldo < 0) {
+		SENSOR_ERR("fail to get vled_ldo\n");
+		pdata->vled_ldo = 0;
+	} else {
+		rc = gpio_request(pdata->vled_ldo, "prox_vled_en");
+		if (rc < 0) {
+			SENSOR_ERR("gpio %d request failed (%d)\n",
+				pdata->vled_ldo, rc);
+			return rc;
+		}
+		gpio_direction_output(pdata->vled_ldo, 0);
+	}
+
 	return 0;
 }
-#else
-static int stk3013_parse_dt(struct device *dev,
-			struct stk3013_platform_data *pdata)
-{
-	return -ENODEV;
-}
-#endif /* !CONFIG_OF */
+
 #ifdef PROXIMITY_CALIBRATION
 static int check_calibration_offset(struct stk3013_data *ps_data)
 {
@@ -1549,15 +1846,15 @@ static int check_calibration_offset(struct stk3013_data *ps_data)
 	old_fs = get_fs();
 	set_fs(KERNEL_DS);
 
-	cal_filp = filp_open(CALIBRATION_FILE_PATH, O_RDONLY, 0444);
+	cal_filp = filp_open(CALIBRATION_FILE_PATH, O_RDONLY, 0);
 	if (IS_ERR(cal_filp)) {
 		ret = PTR_ERR(cal_filp);
 		if (ret != -ENOENT)
 			SENSOR_ERR("Can't open calibration file\n");
 		set_fs(old_fs);
 		ps_data->ps_offset = ps_data->ps_default_offset;
-		SENSOR_ERR("Can't open calibration file 2, %d, ps_offset = %d\n",
-                  			ret, ps_data->ps_offset);
+		SENSOR_ERR("Can't open calibration file 2(%d) ps_offset =%d\n",
+					ret, ps_data->ps_offset);
 		return ret;
 	}
 
@@ -1568,14 +1865,22 @@ static int check_calibration_offset(struct stk3013_data *ps_data)
 		SENSOR_ERR("Can't read the cal data from file\n");
 		ret = -EIO;
 	}
-	SENSOR_INFO("file_offset = %d, ps_offset = %d, ps_default_offset = %d\n",
-         			file_offset_data, ps_data->ps_offset, ps_data->ps_default_offset);
+
+	if(file_offset_data < ps_data->ps_cal_skip_adc)
+		goto exit;
+
 	if (file_offset_data != ps_data->ps_offset)
 		ps_data->ps_offset = file_offset_data;
-	if(ps_data->ps_offset != ps_data->ps_default_offset){
+	if (ps_data->ps_offset != ps_data->ps_default_offset) {
 		stk3013_set_ps_thd_h(ps_data, ps_data->ps_cancel_thd_h);
 		stk3013_set_ps_thd_l(ps_data, ps_data->ps_cancel_thd_l);
 	}
+
+exit:
+	SENSOR_INFO("file_offset = %d, ps_offset = %d, default_offset = %d\n",
+		file_offset_data, ps_data->ps_offset,
+		ps_data->ps_default_offset);
+
 	filp_close(cal_filp, current->files);
 	set_fs(old_fs);
 
@@ -1591,16 +1896,88 @@ static int stk3013_set_wq(struct stk3013_data *ps_data)
 	return 0;
 }
 
-static int stk3013_probe(struct i2c_client *client, const struct i2c_device_id *id)
+static int stk3013_prox_alert_set_up(struct stk3013_data *ps_data)
+{
+	int ret = 0;
+	struct input_dev *dev;
+
+	dev = input_allocate_device();
+	if (dev == NULL) {
+		SENSOR_ERR("could not allocate ps alert device\n");
+		ret = -ENOMEM;
+		goto err_ps_alert_input_alloc_device;
+	}
+
+	dev->name = MODULE_NAME_PROX_ALERT;
+	input_set_capability(dev, EV_REL, REL_MISC);
+	ret = input_register_device(dev);
+	if (ret < 0) {
+		SENSOR_ERR("can not register ps input device\n");
+		input_free_device(dev);
+		goto err_ps_alert_input_register_device;
+	}
+
+	ret = sensors_create_symlink(&dev->dev.kobj, dev->name);
+	if (ret < 0) {
+		SENSOR_ERR("create_symlink error for ps alert\n");
+		goto err_ps_alert_sensors_create_symlink;
+	}
+
+	ret = sysfs_create_group(&dev->dev.kobj, &proximity_alert_attribute_group);
+	if (ret < 0) {
+		SENSOR_ERR("could not create sysfs group for ps alert\n");
+		goto err_ps_alert_sysfs_create_group;
+	}
+
+	input_set_drvdata(dev, ps_data);
+
+	ps_data->ps_alert_input_dev = dev;
+
+	hrtimer_init(&ps_data->prox_alert_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
+	ps_data->prox_alert_timer.function = stk3013_prox_alert_timer_func;
+	ps_data->prox_alert_wq = create_singlethread_workqueue("stk3013_prox_alert_wq");
+	if (!ps_data->prox_alert_wq) {
+		ret = -ENOMEM;
+		SENSOR_ERR("could not create prox alert workqueue\n");
+		goto err_create_prox_alert_workqueue;
+	}
+
+	INIT_WORK(&ps_data->work_prox_alert, stk3013_work_func_prox_alert);
+
+	ret = sensors_register(&ps_data->ps_alert_dev, ps_data,
+				prox_alert_sensor_attrs, MODULE_NAME_PROX_ALERT);
+	if (ret) {
+		SENSOR_ERR("cound not register proximity alert device(%d)\n", ret);
+		goto err_prox_alert_sensor_register_failed;
+	}
+
+	return 0;
+
+err_prox_alert_sensor_register_failed:
+	destroy_workqueue(ps_data->prox_alert_wq);
+err_create_prox_alert_workqueue:
+	sysfs_remove_group(&dev->dev.kobj, &proximity_alert_attribute_group);
+err_ps_alert_sysfs_create_group:
+	sensors_remove_symlink(&dev->dev.kobj, dev->name);
+err_ps_alert_sensors_create_symlink:
+	input_unregister_device(dev);
+err_ps_alert_input_register_device:
+err_ps_alert_input_alloc_device:
+	return ret;
+}
+
+static int stk3013_probe(struct i2c_client *client,
+			const struct i2c_device_id *id)
 {
 	int ret = -ENODEV;
 	struct stk3013_data *ps_data;
 	struct stk3013_platform_data *plat_data;
-	SENSOR_INFO(" driver version = %s\n",  DRIVER_VERSION);
+
+	SENSOR_INFO("driver version = %s\n", DRIVER_VERSION);
 
 	if (!i2c_check_functionality(client->adapter, I2C_FUNC_I2C)) {
 		SENSOR_ERR("No Support for I2C_FUNC_I2C\n");
-		return -ENODEV;
+		return ret;
 	}
 
 	ps_data = kzalloc(sizeof(struct stk3013_data), GFP_KERNEL);
@@ -1608,39 +1985,48 @@ static int stk3013_probe(struct i2c_client *client, const struct i2c_device_id *
 		SENSOR_ERR("failed to allocate stk3013_data\n");
 		return -ENOMEM;
 	}
+
 	ps_data->client = client;
 	i2c_set_clientdata(client, ps_data);
 	mutex_init(&ps_data->io_lock);
-	wake_lock_init(&ps_data->ps_wakelock, WAKE_LOCK_SUSPEND, "stk_input_wakelock");
+	wake_lock_init(&ps_data->ps_wakelock, WAKE_LOCK_SUSPEND,
+			"stk_input_wakelock");
+
+	ps_data->ps_enabled = 0;
+	ps_data->ps_alert_enabled = 0;
+	ps_data->ps_alert_mode_support = 0;
 
 	if (client->dev.of_node) {
-		SENSOR_INFO(" probe with device tree\n");
-		plat_data = devm_kzalloc(&client->dev, sizeof(struct stk3013_platform_data), GFP_KERNEL);
+		SENSOR_INFO("with device tree\n");
+		plat_data = devm_kzalloc(&client->dev,
+			sizeof(struct stk3013_platform_data), GFP_KERNEL);
 		if (!plat_data) {
 			dev_err(&client->dev, "Failed to allocate memory\n");
-			return -ENOMEM;
+			ret = -ENOMEM;
+			goto err_als_input_allocate;
 		}
-
 		ret = stk3013_parse_dt(&client->dev, plat_data);
 		if (ret) {
-			dev_err(&client->dev,
-				"%s: stk3013_parse_dt ret=%d\n", __func__, ret);
-			return ret;
+			SENSOR_ERR("stk3013_parse_dt ret=%d\n", ret);
+			goto err_als_input_allocate;
 		}
 	} else {
-		SENSOR_INFO(" probe with platform data\n");
+		SENSOR_INFO("with platform data\n");
 		plat_data = client->dev.platform_data;
 	}
 	if (!plat_data) {
-		dev_err(&client->dev, "%s: no stk3013 platform data!\n", __func__);
+		SENSOR_ERR("no stk3013 platform data!\n");
+		ret = -ENOMEM;
 		goto err_als_input_allocate;
-	}
-
-	stk3013_regulator_onoff(&client->dev, ON);
+	}	
 
 	ps_data->int_pin = plat_data->int_pin;
 	ps_data->pdata = plat_data;
-
+	
+	stk3013_regulator_onoff(&client->dev, ON);
+	if(ps_data->pdata->vled_ldo)
+		stk3013_vled_onoff(&client->dev,ON);
+	
 	stk3013_set_wq(ps_data);
 	ret = stk3013_init_all_setting(client, plat_data);
 	if (ret < 0)
@@ -1652,28 +2038,31 @@ static int stk3013_probe(struct i2c_client *client, const struct i2c_device_id *
 		ret = -ENOMEM;
 		goto err_input_alloc_device;
 	}
-	ps_data->ps_input_dev->name = "proximity_sensor";
+	ps_data->ps_input_dev->name = MODULE_NAME_PROX;
 	set_bit(EV_ABS, ps_data->ps_input_dev->evbit);
 	input_set_capability(ps_data->ps_input_dev, EV_ABS, ABS_DISTANCE);
 	input_set_abs_params(ps_data->ps_input_dev, ABS_DISTANCE, 0, 1, 0, 0);
 	ret = input_register_device(ps_data->ps_input_dev);
 	if (ret < 0) {
 		SENSOR_ERR("can not register ps input device\n");
+		input_free_device(ps_data->ps_input_dev);
 		goto err_input_register_device;
 	}
 
 	ret = sensors_create_symlink(&ps_data->ps_input_dev->dev.kobj,
-		ps_data->ps_input_dev->name);
+						ps_data->ps_input_dev->name);
 	if (ret < 0) {
 		SENSOR_ERR("create_symlink error\n");
 		goto err_sensors_create_symlink_prox;
 	}
 
-	ret = sysfs_create_group(&ps_data->ps_input_dev->dev.kobj, &proximity_attribute_group);
+	ret = sysfs_create_group(&ps_data->ps_input_dev->dev.kobj,
+					&proximity_attribute_group);
 	if (ret < 0) {
 		SENSOR_ERR("could not create sysfs group for ps\n");
 		goto err_sysfs_create_group_proximity;
 	}
+
 	input_set_drvdata(ps_data->ps_input_dev, ps_data);
 
 	ret = stk3013_setup_irq(client);
@@ -1696,36 +2085,53 @@ static int stk3013_probe(struct i2c_client *client, const struct i2c_device_id *
 	/* this is the thread function we run on the work queue */
 	INIT_WORK(&ps_data->work_prox, stk3013_work_func_prox);
 
-	ret = sensors_register(ps_data->ps_dev,
-		ps_data, prox_sensor_attrs,
-			"proximity_sensor");
+	ret = sensors_register(&ps_data->ps_dev, ps_data,
+				prox_sensor_attrs, MODULE_NAME_PROX);
 	if (ret) {
-		SENSOR_ERR("cound not register proximity sensor device(%d).\n",ret);
+		SENSOR_ERR("cound not register proximity sensor device(%d)\n",
+			ret);
 		goto prox_sensor_register_failed;
 	}
 
+	if (ps_data->ps_alert_mode_support) {
+		ret = stk3013_prox_alert_set_up(ps_data);
+		if (ret < 0) {
+			SENSOR_ERR("cound not set up prox alert device (%d)\n", ret);
+			goto prox_alert_set_up_failed;
+		}
+		SENSOR_INFO("prox alert set up done!");
+	}
+
 	/*stk3013_regulator_onoff(&client->dev, OFF);*/
-	SENSOR_INFO("probe successfully\n");
+	if(ps_data->pdata->vled_ldo)
+		stk3013_vled_onoff(&client->dev,OFF);
+
+	SENSOR_INFO("success\n");
 	return 0;
 	/*device_init_wakeup(&client->dev, false);*/
+
+prox_alert_set_up_failed:
+	sensors_unregister(ps_data->ps_dev, prox_sensor_attrs);
 prox_sensor_register_failed:
 	destroy_workqueue(ps_data->prox_wq);
 err_create_prox_workqueue:
 err_stk3013_setup_irq:
 	free_irq(ps_data->irq, ps_data);
 	gpio_free(ps_data->int_pin);
-
 err_sysfs_create_group_proximity:
 	sensors_remove_symlink(&ps_data->ps_input_dev->dev.kobj,
-	ps_data->ps_input_dev->name);
+					ps_data->ps_input_dev->name);
 err_sensors_create_symlink_prox:
 	input_unregister_device(ps_data->ps_input_dev);
 err_input_register_device:
-	input_free_device(ps_data->ps_input_dev);
 err_input_alloc_device:
 err_init_all_setting:
 	destroy_workqueue(ps_data->stk_wq);
 	/*stk3013_regulator_onoff(&client->dev, OFF);*/
+	if(ps_data->pdata->vled_ldo){
+		stk3013_vled_onoff(&client->dev,OFF);
+		gpio_free(ps_data->pdata->vled_ldo);
+	}
 err_als_input_allocate:
 	wake_lock_destroy(&ps_data->ps_wakelock);
 	mutex_destroy(&ps_data->io_lock);
@@ -1736,31 +2142,30 @@ err_als_input_allocate:
 
 static int stk3013_remove(struct i2c_client *client)
 {
-	struct stk3013_data *ps_data = i2c_get_clientdata(client);
-
-	device_init_wakeup(&client->dev, false);
-	free_irq(ps_data->irq, ps_data);
-	gpio_free(ps_data->int_pin);
-	if (ps_data->vdd) {
-		SENSOR_INFO("VDD put\n");
-		devm_regulator_put(ps_data->vdd);
-	}
-	if (ps_data->vio) {
-		SENSOR_INFO("VIO put\n");
-		devm_regulator_put(ps_data->vio);
-	}
-	destroy_workqueue(ps_data->prox_wq);
-	sensors_unregister(ps_data->ps_dev, prox_sensor_attrs);
-	sensors_remove_symlink(&ps_data->ps_input_dev->dev.kobj,
-		ps_data->ps_input_dev->name);
-	sysfs_remove_group(&ps_data->ps_input_dev->dev.kobj, &proximity_attribute_group);
-	input_unregister_device(ps_data->ps_input_dev);
-	input_free_device(ps_data->ps_input_dev);
-	wake_lock_destroy(&ps_data->ps_wakelock);
-	mutex_destroy(&ps_data->io_lock);
-	kfree(ps_data);
-
+	SENSOR_INFO("\n");
 	return 0;
+}
+
+static void stk3013_shutdown(struct i2c_client *client)
+{
+	struct stk3013_data *ps_data = i2c_get_clientdata(client);
+	struct device *dev = &client->dev;
+
+	SENSOR_INFO("\n");
+
+	if (ps_data->ps_alert_enabled) {
+		hrtimer_cancel(&ps_data->prox_alert_timer);
+		cancel_work_sync(&ps_data->work_prox_alert);
+		stk3013_enable_ps(dev, 0, 0);
+		ps_data->ps_alert_enabled = 0;
+	}
+
+	if (ps_data->ps_enabled) {
+		stk3013_enable_ps(dev, 0, 0);
+		ps_data->ps_enabled = 0;
+	}
+
+	stk3013_regulator_onoff(dev, OFF);
 }
 
 static const struct i2c_device_id stk_ps_id[] = {
@@ -1778,34 +2183,34 @@ static struct i2c_driver stk_ps_driver = {
 	.driver = {
 	.name = CHIP_ID,
 		.owner = THIS_MODULE,
-#ifdef CONFIG_OF
 		.of_match_table = stk_match_table,
-#endif
 		.pm = &stk3013_pm_ops,
 	},
 	.probe = stk3013_probe,
 	.remove = stk3013_remove,
+	.shutdown = stk3013_shutdown,
 	.id_table = stk_ps_id,
 };
 
 static int __init stk3013_init(void)
 {
 	int ret;
+
 	ret = i2c_add_driver(&stk_ps_driver);
-	if (ret) {
+	if (ret)
 		i2c_del_driver(&stk_ps_driver);
-		return ret;
-	}
-	return 0;
+
+	return ret;
 }
 
 static void __exit stk3013_exit(void)
 {
 	i2c_del_driver(&stk_ps_driver);
 }
+
 module_init(stk3013_init);
 module_exit(stk3013_exit);
-MODULE_AUTHOR("Lex Hsieh <lex_hsieh@sensortek.com.tw>");
+MODULE_AUTHOR("Samsung Electronics");
 MODULE_DESCRIPTION("Sensortek stk3013 Proximity Sensor driver");
 MODULE_LICENSE("GPL");
 MODULE_VERSION(DRIVER_VERSION);

@@ -95,7 +95,7 @@ static int gpu_tmu_notifier(struct notifier_block *notifier,
 	if (!platform->tmu_status)
 		return NOTIFY_OK;
 
-	platform->voltage_margin = platform->gpu_default_vol_margin;
+	platform->voltage_margin = 0;
 	index = *(unsigned long*)v;
 
 	if (event == GPU_COLD) {
@@ -359,7 +359,7 @@ int gpu_notifier_init(struct kbase_device *kbdev)
 	if (!platform)
 		return -ENODEV;
 
-	platform->voltage_margin = 0;
+	platform->voltage_margin = platform->gpu_default_vol_margin;
 #if defined (CONFIG_EXYNOS_THERMAL) && defined(CONFIG_GPU_THERMAL)
 	exynos_gpu_add_notifier(&gpu_tmu_nb);
 #endif /* CONFIG_EXYNOS_THERMAL */

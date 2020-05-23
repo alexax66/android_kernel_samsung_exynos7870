@@ -21,6 +21,40 @@
 #define ABOV_TK_NAME "abov-touchkey-ft1804"
 #define ABOV_ID 0x40
 
+extern int get_lcd_attached(char *);
+extern unsigned int lcdtype;
+
+#define LIGHT_VERSION_PATH		"/efs/FactoryApp/tkey_light_version"
+#define LIGHT_TABLE_PATH		"/efs/FactoryApp/tkey_light"
+#define LIGHT_CRC_PATH			"/efs/FactoryApp/tkey_light_crc"
+#define LIGHT_TABLE_PATH_LEN		50
+#define LIGHT_VERSION_LEN		25
+#define LIGHT_CRC_SIZE			10
+#define LIGHT_DATA_SIZE			5
+#define LIGHT_REG_MIN_VAL		0x01
+#define LIGHT_REG_MAX_VAL		0x1f
+
+struct light_info {
+	int octa_id;
+	int led_reg;
+};
+
+enum WINDOW_COLOR {
+	WINDOW_COLOR_BLACK_UTYPE = 0,
+	WINDOW_COLOR_BLACK,
+	WINDOW_COLOR_WHITE,
+	WINDOW_COLOR_GOLD,
+	WINDOW_COLOR_SILVER,
+	WINDOW_COLOR_GREEN,
+	WINDOW_COLOR_BLUE,
+	WINDOW_COLOR_PINKGOLD,
+	WINDOW_COLOR_PINK,
+};
+#define WINDOW_COLOR_DEFAULT		WINDOW_COLOR_BLACK
+
+#define LIGHT_TABLE_MAX			10
+struct light_info tkey_light_reg_table[LIGHT_TABLE_MAX];
+
 struct abov_touchkey_platform_data {
 	unsigned long irq_flag;
 	int gpio_en;
@@ -39,6 +73,10 @@ struct abov_touchkey_platform_data {
 	int (*keyled) (bool on);
 	char *fw_path;
 	bool boot_on_ldo;
+	bool bringup;
+	bool each_tkey_thd;
+	int dt_light_version;
+	int dt_light_table;
 };
 
 #endif /* LINUX_ABOV_TOUCHKEY_H */

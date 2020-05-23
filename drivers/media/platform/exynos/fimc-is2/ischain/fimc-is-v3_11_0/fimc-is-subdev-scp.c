@@ -47,14 +47,14 @@ static int fimc_is_ischain_scp_adjust_crop(struct fimc_is_device_ischain *device
 	if (*output_crop_w < (scp_param->otf_input.width + 15) / 16) {
 		mwarn("Cannot be scaled down beyond 1/16 times(%d -> %d)",
 			device, scp_param->otf_input.width, *output_crop_w);
-		*output_crop_w = (scp_param->otf_input.width + 15) / 16;
+		*output_crop_w = ALIGN((scp_param->otf_input.width + 15) / 16, 16);
 		changed |= 0x10;
 	}
 
 	if (*output_crop_h < (scp_param->otf_input.height + 15) / 16) {
 		mwarn("Cannot be scaled down beyond 1/16 times(%d -> %d)",
 			device, scp_param->otf_input.height, *output_crop_h);
-		*output_crop_h = (scp_param->otf_input.height + 15) / 16;
+		*output_crop_h = ALIGN((scp_param->otf_input.height + 15) / 16, 2);
 		changed |= 0x20;
 	}
 
@@ -254,6 +254,8 @@ static int fimc_is_ischain_scp_update(struct fimc_is_device_ischain *device,
 		set_bit(FIMC_IS_SUBDEV_RUN, &subdev->state);
 	} else {
 		dma_output->cmd = DMA_OUTPUT_COMMAND_DISABLE;
+		dma_output->width = otcrop->w;
+		dma_output->height = otcrop->h;
 		*lindex |= LOWBIT_OF(PARAM_SCALERP_DMA_OUTPUT);
 		*hindex |= HIGHBIT_OF(PARAM_SCALERP_DMA_OUTPUT);
 		(*indexes)++;
@@ -368,21 +370,24 @@ static int fimc_is_ischain_scp_tag(struct fimc_is_subdev *subdev,
 			node->request = 0;
 		}
 	} else {
-		if (test_bit(FIMC_IS_SUBDEV_RUN, &subdev->state)) {
-			ret = fimc_is_ischain_scp_update(device,
-				subdev,
-				ldr_frame,
-				queue,
-				scp_param,
-				incrop,
-				otcrop,
-				&lindex,
-				&hindex,
-				&indexes,
-				false);
-			if (ret) {
-				merr("fimc_is_ischain_scp_update is fail(%d)", device, ret);
-				goto p_err;
+		if (!COMPARE_CROP(incrop, &inparm) ||
+			!COMPARE_CROP(otcrop, &otparm) ||
+			test_bit(FIMC_IS_SUBDEV_RUN, &subdev->state) ||
+			test_bit(FIMC_IS_SUBDEV_FORCE_SET, &leader->state)) {
+				ret = fimc_is_ischain_scp_update(device,
+					subdev,
+					ldr_frame,
+					queue,
+					scp_param,
+					incrop,
+					otcrop,
+					&lindex,
+					&hindex,
+					&indexes,
+					false);
+				if (ret) {
+					merr("fimc_is_ischain_scp_update is fail(%d)", device, ret);
+					goto p_err;
 			}
 
 			mdbg_pframe("in_crop[%d, %d, %d, %d]\n", device, subdev, ldr_frame,

@@ -633,9 +633,6 @@ static bool search_nested_keyrings(struct key *keyring,
 	BUG_ON((ctx->flags & STATE_CHECKS) == 0 ||
 	       (ctx->flags & STATE_CHECKS) == STATE_CHECKS);
 
-	if (ctx->index_key.description)
-		ctx->index_key.desc_len = strlen(ctx->index_key.description);
-
 	/* Check to see if this top-level keyring is what we are looking for
 	 * and whether it is valid or not.
 	 */
@@ -893,6 +890,7 @@ key_ref_t keyring_search(key_ref_t keyring,
 	struct keyring_search_context ctx = {
 		.index_key.type		= type,
 		.index_key.description	= description,
+		.index_key.desc_len	= strlen(description),
 		.cred			= current_cred(),
 		.match_data.cmp		= key_default_cmp,
 		.match_data.raw_data	= description,
@@ -1181,9 +1179,11 @@ void __key_link_end(struct key *keyring,
 	if (index_key->type == &key_type_keyring)
 		up_write(&keyring_serialise_link_sem);
 
-	if (edit && !edit->dead_leaf) {
+	if (edit) {
+		if (!edit->dead_leaf) {
 		key_payload_reserve(keyring,
 				    keyring->datalen - KEYQUOTA_LINK_BYTES);
+		}
 		assoc_array_cancel_edit(edit);
 	}
 	up_write(&keyring->sem);

@@ -8,7 +8,7 @@
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
  * published by the Free Software Foundation.
-*/
+ */
 
 #ifndef __AID_DIMMING_H__
 #define __AID_DIMMING_H__
@@ -16,6 +16,10 @@
 #if defined(CONFIG_PANEL_EA8064G_DYNAMIC)
 #include "ea8064g_dimming.h"
 #elif defined(CONFIG_PANEL_EA8061S_J7XE)
+#include "ea8061s_dimming.h"
+#elif defined(CONFIG_PANEL_S6E8AA5X01)
+#include "s6e8aa5x01_dimming.h"
+#elif defined(CONFIG_PANEL_EA8061S_J7VE)
 #include "ea8061s_dimming.h"
 #else
 #error "ERROR !! Check LCD Panel Header File"

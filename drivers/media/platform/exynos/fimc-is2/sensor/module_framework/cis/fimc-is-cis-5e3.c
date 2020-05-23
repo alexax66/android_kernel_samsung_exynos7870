@@ -155,6 +155,10 @@ int sensor_5e3_cis_init(struct v4l2_subdev *subdev)
 	struct fimc_is_cis *cis;
 	u32 setfile_index = 0;
 	cis_setting_info setinfo;
+#ifdef USE_CAMERA_HW_BIG_DATA
+	struct cam_hw_param *hw_param = NULL;
+	struct fimc_is_device_sensor_peri *sensor_peri = NULL;
+#endif
 
 #if USE_OTP_AWB_CAL_DATA
 	struct i2c_client *client = NULL;
@@ -189,9 +193,19 @@ int sensor_5e3_cis_init(struct v4l2_subdev *subdev)
 
 	ret = sensor_cis_check_rev(cis);
 	if (ret < 0) {
+#ifdef USE_CAMERA_HW_BIG_DATA
+		sensor_peri = container_of(cis, struct fimc_is_device_sensor_peri, cis);
+		if (sensor_peri && sensor_peri->module->position == SENSOR_POSITION_REAR)
+			fimc_is_sec_get_rear_hw_param(&hw_param);
+		else if (sensor_peri && sensor_peri->module->position == SENSOR_POSITION_FRONT)
+			fimc_is_sec_get_front_hw_param(&hw_param);
+		if (hw_param)
+			hw_param->i2c_sensor_err_cnt++;
+#endif
 		warn("sensor_5e3_check_rev is fail when cis init");
 		cis->rev_flag = true;
-		ret = 0;
+		ret = -EINVAL;
+		goto p_err;
 	}
 
 	cis->cis_data->cur_width = SENSOR_5E3_MAX_WIDTH;
@@ -271,11 +285,15 @@ int sensor_5e3_cis_init(struct v4l2_subdev *subdev)
 	/* Write AWB Cal Data to sensor */
 	msleep(10);
 
-	ret = fimc_is_sensor_write16_array(client, 0x020E, data16, 4);
-	if (ret < 0) {
-		printk(KERN_INFO "fimc_is_sensor_write16_array fail\n");
-		ret = -EINVAL;
-		goto p_err;
+	if ((data16[0] | data16[1] | data16[2] | data16[3]) == 0) {
+		printk(KERN_INFO "Skip! Writing AWB Cal data to sensor\n");
+	} else {
+		ret = fimc_is_sensor_write16_array(client, 0x020E, data16, 4);
+		if (ret < 0) {
+			printk(KERN_INFO "fimc_is_sensor_write16_array fail\n");
+			ret = -EINVAL;
+			goto p_err;
+		}
 	}
 
 	cis->use_dgain = false;
@@ -1233,6 +1251,10 @@ int sensor_5e3_cis_set_analog_gain(struct v4l2_subdev *subdev, struct ae_param *
 	}
 
 	if (analog_gain > cis->cis_data->max_analog_gain[0]) {
+		err("wrong analog gain, input (x%d, %d), max (x%d, %d)",
+			again->val, analog_gain,
+			cis->cis_data->max_analog_gain[1],
+			cis->cis_data->max_analog_gain[0]);
 		analog_gain = cis->cis_data->max_analog_gain[0];
 	}
 
@@ -1474,6 +1496,10 @@ int sensor_5e3_cis_set_digital_gain(struct v4l2_subdev *subdev, struct ae_param 
 		long_gain = cis->cis_data->min_digital_gain[0];
 	}
 	if (long_gain > cis->cis_data->max_digital_gain[0]) {
+		err("wrong digital long gain, input (x%d, %d), max (x%d, %d)\n",
+			dgain->long_val, long_gain,
+			cis->cis_data->max_digital_gain[1],
+			cis->cis_data->max_digital_gain[0]);
 		long_gain = cis->cis_data->max_digital_gain[0];
 	}
 
@@ -1481,6 +1507,10 @@ int sensor_5e3_cis_set_digital_gain(struct v4l2_subdev *subdev, struct ae_param 
 		short_gain = cis->cis_data->min_digital_gain[0];
 	}
 	if (short_gain > cis->cis_data->max_digital_gain[0]) {
+		err("wrong digital short gain, input (x%d, %d), max (x%d, %d)",
+			dgain->short_val, short_gain,
+			cis->cis_data->max_digital_gain[1],
+			cis->cis_data->max_digital_gain[0]);
 		short_gain = cis->cis_data->max_digital_gain[0];
 	}
 
@@ -1709,6 +1739,9 @@ static struct fimc_is_cis_ops cis_ops = {
 	.cis_get_max_digital_gain = sensor_5e3_cis_get_max_digital_gain,
 	.cis_compensate_gain_for_extremely_br = sensor_cis_compensate_gain_for_extremely_br,
 	.cis_wait_streamoff = sensor_cis_wait_streamoff,
+#ifdef USE_FACE_UNLOCK_AE_AWB_INIT
+	.cis_set_initial_exposure = sensor_cis_set_initial_exposure,
+#endif
 };
 
 int cis_5e3_probe(struct i2c_client *client,
@@ -1830,7 +1863,12 @@ int cis_5e3_probe(struct i2c_client *client,
 		sensor_5e3_pllinfos = sensor_5e3_pllinfos_A;
 		sensor_5e3_max_setfile_num = sizeof(sensor_5e3_setfiles_A) / sizeof(sensor_5e3_setfiles_A[0]);
 	}
-
+	
+#ifdef USE_FACE_UNLOCK_AE_AWB_INIT
+	cis->use_initial_ae = of_property_read_bool(dnode, "use_initial_ae");
+	probe_info("%s use_initial_ae(%d)\n", __func__, cis->use_initial_ae);
+#endif
+	
 	v4l2_i2c_subdev_init(subdev_cis, client, &subdev_ops);
 	v4l2_set_subdevdata(subdev_cis, cis);
 	v4l2_set_subdev_hostdata(subdev_cis, device);
@@ -1858,6 +1896,7 @@ MODULE_DEVICE_TABLE(of, exynos_fimc_is_cis_5e3_match);
 
 static const struct i2c_device_id cis_5e3_idt[] = {
 	{ SENSOR_NAME, 0 },
+	{},
 };
 
 static struct i2c_driver cis_5e3_driver = {

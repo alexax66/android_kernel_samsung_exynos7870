@@ -292,6 +292,10 @@ again:
  * @drv: cpuidle driver containing state data
  * @dev: the CPU
  */
+#ifdef CONFIG_SEC_PHCOMP
+extern int get_phcomp_idle_time_threshold(void);
+extern void trigger_phcompd(int cpu);
+#endif
 static int menu_select(struct cpuidle_driver *drv, struct cpuidle_device *dev)
 {
 	struct menu_device *data = this_cpu_ptr(&menu_devices);
@@ -299,6 +303,9 @@ static int menu_select(struct cpuidle_driver *drv, struct cpuidle_device *dev)
 	int i;
 	unsigned int interactivity_req;
 	unsigned long nr_iowaiters, cpu_load;
+#ifdef CONFIG_SEC_PHCOMP
+	int cpu = smp_processor_id();
+#endif	
 
 	if (data->needs_update) {
 		menu_update(drv, dev);
@@ -367,6 +374,11 @@ static int menu_select(struct cpuidle_driver *drv, struct cpuidle_device *dev)
 		data->last_state_idx = i;
 	}
 
+#ifdef CONFIG_SEC_PHCOMP
+	if ( unlikely (data->last_state_idx >=1) )
+		if (data->predicted_us > get_phcomp_idle_time_threshold() )
+			trigger_phcompd(cpu);
+#endif
 	return data->last_state_idx;
 }
 

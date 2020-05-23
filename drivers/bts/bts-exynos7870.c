@@ -1123,7 +1123,7 @@ void exynos_update_media_scenario(enum bts_media_type media_type,
 		else
 			mif_freq = 676000;
 		if (wincnt == 3 && decon_bw <= (2 *FHD_BW))
-			mif_freq = 546000;
+			mif_freq = 676000;
 	}
 
 	exynos7_bts_notify(mif_freq);
@@ -1156,7 +1156,8 @@ static int __init exynos7_bts_init(void)
 		if (IS_ERR(clk_table[i].clk)){
 			BTS_DBG("failed to get bts clk %s\n",
 					clk_table[i].clk_name);
-			exynos7_bts[btstable_index].ct_ptr = NULL;
+			if (btstable_index != BTS_MAX)
+				exynos7_bts[btstable_index].ct_ptr = NULL;
 		}
 		else {
 			ret = clk_prepare(clk_table[i].clk);

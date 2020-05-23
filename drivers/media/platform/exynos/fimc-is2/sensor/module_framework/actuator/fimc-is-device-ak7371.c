@@ -23,6 +23,8 @@
 
 #include "fimc-is-helper-i2c.h"
 
+#include "interface/fimc-is-interface-library.h"
+
 #define ACTUATOR_NAME		"AK7371"
 
 #define DEF_AK7371_FIRST_POSITION		120
@@ -34,6 +36,7 @@
 #define AK7371_ACTIVEMODE_ADDR  0x2 // AK7371 reg CONT1
 #define AK7371_ACTIVEMODE_OUTDIS 0x0
 
+extern struct fimc_is_lib_support gPtr_lib_support;
 extern struct fimc_is_sysfs_actuator sysfs_actuator;
 
 static int sensor_ak7371_write_position(struct i2c_client *client, u32 val)
@@ -61,7 +64,7 @@ static int sensor_ak7371_write_position(struct i2c_client *client, u32 val)
 
 	dbg_sensor("AK7371 val_high : 0x%04X\n", val_high);
 	dbg_sensor("AK7371 val_low : 0x%04X\n", val_low);
-	
+
 	ret = fimc_is_sensor_addr8_write8(client, AK7371_POSITION1_ADDR, val_high);
 	if (ret < 0)
 		goto p_err;
@@ -157,10 +160,19 @@ int sensor_ak7371_actuator_init(struct v4l2_subdev *subdev, u32 val)
 	u8 product_id = 0;
 	struct fimc_is_actuator *actuator;
 	struct i2c_client *client = NULL;
+#ifdef USE_CAMERA_HW_BIG_DATA
+	struct fimc_is_device_sensor *device = NULL;
+	struct cam_hw_param *hw_param = NULL;
+#endif
 #ifdef DEBUG_ACTUATOR_TIME
 	struct timeval st, end;
 	do_gettimeofday(&st);
 #endif
+
+	long cal_addr;
+	u32 cal_data;
+
+	int first_position = DEF_AK7371_FIRST_POSITION;
 
 	BUG_ON(!subdev);
 
@@ -181,8 +193,21 @@ int sensor_ak7371_actuator_init(struct v4l2_subdev *subdev, u32 val)
 
 	// CheckProductID
 	ret = fimc_is_sensor_addr8_read8(client, AK7371_PRODUCT_ID_ADDR, &product_id);
-	if (ret < 0)
+	if (ret < 0) {
+#ifdef USE_CAMERA_HW_BIG_DATA
+		device = v4l2_get_subdev_hostdata(subdev);
+		if (device) {
+			if (device->position == SENSOR_POSITION_REAR) {
+				fimc_is_sec_get_rear_hw_param(&hw_param);
+			} else if (device->position == SENSOR_POSITION_FRONT) {
+				fimc_is_sec_get_front_hw_param(&hw_param);
+			}
+		}
+		if (hw_param)
+			hw_param->i2c_af_err_cnt++;
+#endif
 		goto p_err;
+	}
 
 	dbg_sensor("AK7371 product_id : 0x%04X\n", product_id);
 
@@ -191,10 +216,24 @@ int sensor_ak7371_actuator_init(struct v4l2_subdev *subdev, u32 val)
 		goto p_err;
 	}
 
-	ret = sensor_ak7371_write_position(client, DEF_AK7371_FIRST_POSITION);
+	/* EEPROM AF calData address */
+	if (gPtr_lib_support.binary_load_flg) {
+		/* get pan_focus */
+		cal_addr = gPtr_lib_support.minfo->kvaddr_rear_cal + EEPROM_OEM_BASE;
+		memcpy((void *)&cal_data, (void *)cal_addr, sizeof(cal_data));
+
+		if (cal_data > 0)
+			first_position = cal_data;
+	} else {
+		warn("SDK library is not loaded");
+	}
+
+	ret = sensor_ak7371_write_position(client, first_position);
 	if (ret <0)
 		goto p_err;
+	actuator->position = first_position;
 
+	/* Go active mode */
 	ret = fimc_is_sensor_addr8_write8(client, AK7371_ACTIVEMODE_ADDR, AK7371_ACTIVEMODE_OUTDIS);
 	if (ret <0)
 		goto p_err;
@@ -406,9 +445,9 @@ int sensor_ak7371_actuator_probe(struct i2c_client *client,
 	probe_info("%s sensor_id %d\n", __func__, sensor_id);
 
 	device = &core->sensor[sensor_id];
-	if (!device) {
-		err("sensor device is NULL");
-		ret = -ENOMEM;
+	if (!test_bit(FIMC_IS_SENSOR_PROBE, &device->state)) {
+		err("sensor device is not yet probed");
+		ret = -EPROBE_DEFER;
 		goto p_err;
 	}
 
@@ -478,6 +517,7 @@ MODULE_DEVICE_TABLE(of, exynos_fimc_is_ak7371_match);
 
 static const struct i2c_device_id actuator_ak7371_idt[] = {
 	{ ACTUATOR_NAME, 0 },
+	{},
 };
 
 static struct i2c_driver actuator_ak7371_driver = {

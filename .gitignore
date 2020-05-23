@@ -22,15 +22,17 @@
 *.lst
 *.symtypes
 *.order
-modules.builtin
 *.elf
 *.gz
 *.bz2
 *.lzma
 *.xz
+*.lz4
 *.lzo
 *.patch
 *.gcno
+Module.symvers
+*.dwo
 
 #
 # Top-level generic files
@@ -42,7 +44,7 @@ modules.builtin
 /vmlinuz
 /System.map
 /Module.markers
-/Module.symvers
+/out
 
 #
 # Debian directory (make deb-pkg)
@@ -59,7 +61,6 @@ modules.builtin
 # Generated include files
 #
 include/config
-include/linux/version.h
 include/generated
 arch/*/include/generated
 
@@ -84,5 +85,19 @@ GTAGS
 *~
 \#*#
 
-/build/
-!vmm.elf
+#
+# Leavings from module signing
+#
+extra_certificates
+signing_key.priv
+signing_key.x509
+x509.genkey
+
+# Kconfig presets
+all.config
+
+# Gator Daemon files
+tools/gator/daemon/defaults_xml.h
+tools/gator/daemon/escape
+tools/gator/daemon/events.xml
+tools/gator/daemon/events_xml.h

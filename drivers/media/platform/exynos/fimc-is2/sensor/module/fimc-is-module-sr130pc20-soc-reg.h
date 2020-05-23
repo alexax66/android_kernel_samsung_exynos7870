@@ -1069,6 +1069,8 @@ static struct sensor_reg sr130pc20_Init_Reg[] =
 	{0x39, 0x03},
 
 	{0x03, 0x00},
+	{0x01, 0x00},
+
 	{0xff, 0x0a}, /*Delay 100ms*/
 };
 
@@ -2139,6 +2141,8 @@ static struct sensor_reg sr130pc20_Init_VT_Reg[] = {
 		/*3902,*/
 	{0x39, 0x03},
 	{0x03, 0x00},
+	{0x01, 0x00},
+
 	{0xff, 0x28}, /*Delay 400ms*/
 };
 
@@ -3019,6 +3023,7 @@ static struct sensor_reg sr130pc20_resol_640_480_capture[] = {
 		/*3902,*/
 	{0x39, 0x03},
 	{0x03, 0x00},
+	{0x01, 0x00},
 };
 
 static struct sensor_reg sr130pc20_resol_1280_960_capture[] = {
@@ -3111,6 +3116,7 @@ static struct sensor_reg sr130pc20_resol_1280_960_capture[] = {
 		/*3902,*/
 	{0x39, 0x03},
 	{0x03, 0x00},
+	{0x01, 0x00},/*sleep off*/
 
 	{0xff, 0x03}, /*Delay 30ms*/
 };
@@ -4330,6 +4336,7 @@ static struct sensor_reg  sr130pc20_fps_auto[] = {
 	{0x03, 0x00},
 
 	{0x03, 0x00}, /* stream on */
+	{0x01, 0x00},
 };
 
 static struct sensor_reg  sr130pc20_fps_15_camcorder[] = {
@@ -4374,6 +4381,7 @@ static struct sensor_reg  sr130pc20_fps_15_camcorder[] = {
 
 	{0x03, 0x00},
 	{0x03, 0x00}, /* stream on */
+	{0x01, 0x00},
 };
 
 static struct sensor_reg  sr130pc20_fps_7_camcorder[] = {
@@ -4418,6 +4426,7 @@ static struct sensor_reg  sr130pc20_fps_7_camcorder[] = {
 
 	{0x03, 0x00},
 	{0x03, 0x00}, /* stream on */
+	{0x01, 0x00},
 };
 
 static struct sensor_reg  sr130pc20_fps_25_camcorder[] = {
@@ -4501,6 +4510,7 @@ static struct sensor_reg  sr130pc20_fps_25_camcorder[] = {
 	{0x03, 0x00},
 
 	{0x03, 0x00}, /* stream on */
+	{0x01, 0x00},
 };
 
 static struct sensor_reg  sr130pc20_fps_30_camcorder[] = {
@@ -5565,6 +5575,7 @@ static struct sensor_reg  sr130pc20_fps_30_camcorder[] = {
 	{0x03, 0x00},
 
 	{0x03, 0x00}, /* stream on */
+	{0x01, 0x00},
 };
 
 static struct sensor_reg  sr130pc20_anti_banding_flicker_50hz[] = {

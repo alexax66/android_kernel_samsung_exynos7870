@@ -502,22 +502,12 @@
 	};
 
 	pinctrl@13750000 {
-		sd1_clk: sd1-clk {
-			samsung,pin-drv = <1>;
-		};
-
-		sd1_cmd: sd1-cmd {
-			samsung,pin-drv = <1>;
-		};
-	
 		sd1_bus1: sd1-bus-width1 {
 			samsung,pin-pud = <3>;
-			samsung,pin-drv = <1>;
 		};
 
 		sd1_bus4: sd1-bus-width4 {
 			samsung,pin-pud = <3>;
-			samsung,pin-drv = <1>;
 		};
 	};
 	

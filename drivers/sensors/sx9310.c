@@ -488,7 +488,7 @@ static void sx9310_set_enable(struct sx9310_p *data, int enable)
 		SENSOR_INFO("enable(status : 0x%x)\n", status);
 
 		sx9310_ch_interrupt_read(data, status);
-		
+
 		data->diff_avg = 0;
 		data->diff_cnt = 0;
 #ifdef CONFIG_SENSORS_SX9310_USE_2ND_CH
@@ -1522,7 +1522,7 @@ static int sx9310_cpuidle_muic_notifier(struct notifier_block *nb,
 	case ATTACHED_DEV_TA_MUIC:
 	case ATTACHED_DEV_AFC_CHARGER_PREPARE_MUIC:
 	case ATTACHED_DEV_AFC_CHARGER_9V_MUIC:
-		if (action == MUIC_NOTIFY_CMD_ATTACH) 
+		if (action == MUIC_NOTIFY_CMD_ATTACH)
 			SENSOR_INFO("TA/USB is inserted\n");
 		else
 			SENSOR_INFO("TA/USB is removed\n");
@@ -1618,7 +1618,7 @@ static int sx9310_probe(struct i2c_client *client,
 	}
 	disable_irq(data->irq);
 
-	ret = sensors_register(data->factory_device,
+	ret = sensors_register(&data->factory_device,
 		data, sensor_attrs, MODULE_NAME);
 	if (ret) {
 		SENSOR_ERR("cound not register sensor(%d).\n", ret);

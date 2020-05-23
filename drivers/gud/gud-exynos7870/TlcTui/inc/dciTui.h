@@ -73,27 +73,29 @@ union dci_cmd_payload_t {
 
 /* Command */
 struct dci_command_t {
-	uint32_t id;
+	volatile uint32_t id;
 	union dci_cmd_payload_t payload;
 };
 
 /* TUI frame buffer (output from NWd) */
-struct tui_alloc_buffer_t {
+typedef struct {
 	uint64_t    pa;
-};
+} tuiAllocBuffer_t;
 
 #define MAX_DCI_BUFFER_NUMBER 4
 
 /* Response */
 struct dci_response_t {
-	uint32_t	id; /* must be command ID | RSP_ID_MASK */
+	volatile uint32_t	id; /* must be command ID | RSP_ID_MASK */
 	uint32_t		return_code;
-	struct tui_alloc_buffer_t alloc_buffer[MAX_DCI_BUFFER_NUMBER];
+    union {
+		tuiAllocBuffer_t alloc_buffer[MAX_DCI_BUFFER_NUMBER];
+	};
 };
 
 /* DCI buffer */
 struct tui_dci_msg_t {
-	uint32_t     nwd_notif; /* Notification from TlcTui to DrTui */
+	volatile uint32_t     nwd_notif; /* Notification from TlcTui to DrTui */
 	struct dci_command_t  cmd_nwd;   /* Command from DrTui to TlcTui */
 	struct dci_response_t nwd_rsp;   /* Response from TlcTui to DrTui */
 };
@@ -101,6 +103,6 @@ struct tui_dci_msg_t {
 /**
  * Driver UUID. Update accordingly after reserving UUID
  */
-#define DR_TUI_UUID { { 7, 0xC, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 } }
+#define DR_TUI_UUID { { 0xff, 0xff, 0xff, 0xff, 0xd0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x14 } }
 
 #endif /* __DCITUI_H__ */

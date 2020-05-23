@@ -22,9 +22,9 @@
 #define IORESOURCE_VRA_CH1	3
 #define IORESOURCE_ISP_SET_B	4
 
-#define FIMC_IS_RESERVE_LIB_SIZE	(0x00200000)	/* 2MB */
-#define FIMC_IS_TAAISP_SIZE		(0x00080000)	/* 512KB */
-#define FIMC_IS_VRA_SIZE		(0x00800000)	/* 8MB */
+#define FIMC_IS_RESERVE_LIB_SIZE	(SZ_2M + SZ_1M)
+#define FIMC_IS_TAAISP_SIZE		(SZ_512K)
+#define FIMC_IS_VRA_SIZE		(SZ_8M)
 
 enum taaisp_chain_id {
 	ID_3AA_0 = 0,

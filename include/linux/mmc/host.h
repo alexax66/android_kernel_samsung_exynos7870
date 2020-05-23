@@ -15,6 +15,8 @@
 #include <linux/sched.h>
 #include <linux/device.h>
 #include <linux/fault-inject.h>
+#include <linux/blkdev.h>
+#include <linux/wakelock.h>
 
 #include <linux/mmc/core.h>
 #include <linux/mmc/card.h>
@@ -303,6 +305,13 @@ struct mmc_host {
 #define MMC_CAP2_STROBE_ENHANCED	(1 << 18) /* enhanced strobe */
 #define MMC_CAP2_SKIP_INIT_SCAN		(1 << 19) /* skip init mmc scan */
 #define MMC_CAP2_DETECT_ON_ERR	(1 << 20)	/* On I/O err check card removal */
+#if defined(CONFIG_BCM43454) || defined(CONFIG_BCM43454_MODULE) || \
+	defined(CONFIG_BCM43455) || defined(CONFIG_BCM43455_MODULE) || \
+	defined(CONFIG_BCM43456) || defined(CONFIG_BCM43456_MODULE)
+#define MMC_CAP2_BROKEN_VOLTAGE		(1 << 21) /* broken voltage */
+#endif /*(CONFIG_BCM43454) || (CONFIG_BCM43454_MODULE) || \
+	(CONFIG_BCM43455) || (CONFIG_BCM43455_MODULE)|| \
+	(CONFIG_BCM43456) || (CONFIG_BCM43456_MODULE)*/
 	mmc_pm_flag_t		pm_caps;	/* supported pm features */
 
 #ifdef CONFIG_MMC_CLKGATE
@@ -351,6 +360,8 @@ struct mmc_host {
 	int			claim_cnt;	/* "claim" nesting count */
 
 	struct delayed_work	detect;
+	struct wake_lock        detect_wake_lock;
+	const char              *wlock_name;
 #ifdef CONFIG_MARVELL_DRIVERS
     void                *detect_complete;
 #endif
@@ -359,6 +370,10 @@ struct mmc_host {
 
 	const struct mmc_bus_ops *bus_ops;	/* current bus driver */
 	unsigned int		bus_refs;	/* reference counter */
+
+	unsigned int		bus_resume_flags;
+#define MMC_BUSRESUME_MANUAL_RESUME (1 << 0)
+#define MMC_BUSRESUME_NEEDS_RESUME  (1 << 1)
 
 	unsigned int		sdio_irqs;
 	struct task_struct	*sdio_irq_thread;
@@ -399,6 +414,13 @@ struct mmc_host {
 	} embedded_sdio_data;
 #endif
 
+#ifdef CONFIG_BLOCK
+	int			latency_hist_enabled;
+	struct io_latency_state io_lat_s;
+#endif
+
+	int			pm_progress;	/* pm_notify is in progress */
+	int (*sdcard_uevent)(struct mmc_card *card);
 	unsigned long		private[0] ____cacheline_aligned;
 };
 
@@ -426,6 +448,19 @@ static inline void *mmc_priv(struct mmc_host *host)
 #define mmc_dev(x)	((x)->parent)
 #define mmc_classdev(x)	(&(x)->class_dev)
 #define mmc_hostname(x)	(dev_name(&(x)->class_dev))
+#define mmc_bus_needs_resume(host) ((host)->bus_resume_flags & MMC_BUSRESUME_NEEDS_RESUME)
+#define mmc_bus_manual_resume(host) ((host)->bus_resume_flags & MMC_BUSRESUME_MANUAL_RESUME)
+
+static inline void mmc_set_bus_resume_policy(struct mmc_host *host, int manual)
+{
+	if (manual) {
+		host->bus_resume_flags |= MMC_BUSRESUME_MANUAL_RESUME;
+		host->bus_resume_flags &= ~MMC_BUSRESUME_NEEDS_RESUME;
+	} else
+		host->bus_resume_flags &= ~MMC_BUSRESUME_MANUAL_RESUME;
+}
+
+extern int mmc_resume_bus(struct mmc_host *host);
 
 int mmc_power_save_host(struct mmc_host *host);
 int mmc_power_restore_host(struct mmc_host *host);

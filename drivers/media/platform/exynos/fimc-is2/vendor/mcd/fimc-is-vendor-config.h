@@ -27,6 +27,40 @@
 #include "fimc-is-vendor-config_on7e.h"
 #elif defined(CONFIG_CAMERA_A3XPREMIUM)
 #include "fimc-is-vendor-config_a3xpremium.h"
+#elif defined(CONFIG_CAMERA_A3Y17)
+#include "fimc-is-vendor-config_a3y17.h"
+#elif defined(CONFIG_CAMERA_J5Y17) || defined(CONFIG_CAMERA_J7Y17)
+#include "fimc-is-vendor-config_j5y17.h"
+#elif defined(CONFIG_CAMERA_J7POPKOR)
+#include "fimc-is-vendor-config_j7popkor.h"
+#elif defined(CONFIG_CAMERA_J7POP)
+#include "fimc-is-vendor-config_j7pop.h"
+#elif defined(CONFIG_CAMERA_J7VE)
+#include "fimc-is-vendor-config_j7ve.h"
+#elif defined(CONFIG_CAMERA_GTACTIVE2)
+#include "fimc-is-vendor-config_gtactive2.h"
+#elif defined(CONFIG_CAMERA_GRANDPPIRIS)
+#include "fimc-is-vendor-config_grandppiris.h"
+#elif defined(CONFIG_CAMERA_ON7XREF)
+#include "fimc-is-vendor-config_on7xref.h"
+#elif defined(CONFIG_CAMERA_J7TOP)
+#include "fimc-is-vendor-config_j7top.h"
+#elif defined(CONFIG_CAMERA_J8)
+#include "fimc-is-vendor-config_j8.h"
+#elif defined(CONFIG_CAMERA_DEGASY18)
+#include "fimc-is-vendor-config_degasy18.h"
+#elif defined(CONFIG_CAMERA_GTAXLAD)
+#include "fimc-is-vendor-config_gtaxlad.h"
+#elif defined(CONFIG_CAMERA_J6)
+#include "fimc-is-vendor-config_j6.h"
+#elif defined(CONFIG_CAMERA_A6)
+#include "fimc-is-vendor-config_a6.h"
+#elif defined(CONFIG_CAMERA_J7VEIRIS)
+#include "fimc-is-vendor-config_j7veiris.h"
+#elif defined(CONFIG_CAMERA_M10LTE)
+#include "fimc-is-vendor-config_m10lte.h"
+#elif defined(CONFIG_CAMERA_A2CORELTE)
+#include "fimc-is-vendor-config_a2corelte.h"
 #else
 #include "fimc-is-vendor-config_joshua.h"
 #endif

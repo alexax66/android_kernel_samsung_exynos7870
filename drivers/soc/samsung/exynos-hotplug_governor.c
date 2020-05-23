@@ -46,7 +46,7 @@
 #include "../../cpufreq/cpu_load_metric.h"
 
 #define DEFAULT_UP_CHANGE_FREQ		(1300000)	/* MHz */
-#define DEFAULT_DOWN_CHANGE_FREQ	(800000)	/* MHz */
+#define DEFAULT_DOWN_CHANGE_FREQ	(1500000)	/* MHz */
 #define DEFAULT_MONITOR_MS		(100)		/* ms */
 #define DEFAULT_BOOT_ENABLE_MS (30000)		/* 30 s */
 #define RETRY_BOOT_ENABLE_MS (100)		/* 100 ms */
@@ -117,8 +117,9 @@ struct cpu_hstate {
 	},
 };
 
-#define MONITOR_DURATION_NUM   3
-#define TASKS_THRESHOLD		6
+#define UP_MONITOR_DURATION_NUM   1
+#define DOWN_MONITOR_DURATION_NUM   3
+#define TASKS_THRESHOLD		410
 #define DEFAULT_LOAD_THRESHOLD	320
 #define MAX_CLUSTERS   2
 static atomic_t freq_history[MAX_CLUSTERS] =  {ATOMIC_INIT(0), ATOMIC_INIT(0)};
@@ -379,7 +380,7 @@ static action_t exynos_hpgov_select_up_down(void)
 	struct cluster_stats cl_stat[2];
 	int nr;
 
-	nr = nr_running();
+	nr = avg_nr_running();
 
 	cpumask_copy(cl_stat[0].mask, topology_core_cpumask(0));
 	cpumask_copy(cl_stat[1].mask, topology_core_cpumask(4));
@@ -396,12 +397,17 @@ static action_t exynos_hpgov_select_up_down(void)
 
 	load = exynos_hpgov.load;
 
-	if (((c1_freq <= down_freq) && (c0_freq <= down_freq)) &&
-			((c1_util <= load) && (c0_util <= load))) {
+	/* make c0_freq > c1_Freq */
+	if (c1_freq > c0_freq) {
+		swap(c0_freq, c1_freq);
+		swap(c0_util, c1_util);
+	}
+
+	if ((c1_freq > 0 && (c0_freq < down_freq)) &&
+		(c1_freq * c1_util + c0_freq * c0_util <= ((up_freq * load) >> 2) * 3)) {
 		atomic_inc(&freq_history[GO_DOWN]);
 		atomic_set(&freq_history[GO_UP], 0);
-	} else if (((c0_freq >= up_freq) || (c1_freq >= up_freq)) &&
-			((c0_util >= load) || nr >= TASKS_THRESHOLD)) {
+	} else if (c0_freq >= up_freq && (c0_util >= load && nr >= TASKS_THRESHOLD)) {
 		atomic_inc(&freq_history[GO_UP]);
 		atomic_set(&freq_history[GO_DOWN], 0);
 	} else {
@@ -409,9 +415,9 @@ static action_t exynos_hpgov_select_up_down(void)
 		atomic_set(&freq_history[GO_DOWN], 0);
 	}
 
-	if (atomic_read(&freq_history[GO_UP]) > MONITOR_DURATION_NUM)
+	if (atomic_read(&freq_history[GO_UP]) > UP_MONITOR_DURATION_NUM)
 		return GO_UP;
-	else if (atomic_read(&freq_history[GO_DOWN]) > MONITOR_DURATION_NUM)
+	else if (atomic_read(&freq_history[GO_DOWN]) > DOWN_MONITOR_DURATION_NUM)
 		return GO_DOWN;
 
 	return STAY;

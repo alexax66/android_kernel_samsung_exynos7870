@@ -147,18 +147,76 @@ static void tdmb_set_config_poweron(void)
 			__func__, dt_pdata->tdmb_en, rc);
 		return;
 	}
+	if (dt_pdata->tdmb_1p2_en > 0) {
+		rc = gpio_request(dt_pdata->tdmb_1p2_en, "gpio_tdmb_1p2_en");
+		if (rc < 0) {
+			DPRINTK("%s: gpio %d request failed (%d)\n",
+				__func__, dt_pdata->tdmb_1p2_en, rc);
+			gpio_free(dt_pdata->tdmb_en);
+			return;
+		}
+	}
+	if (dt_pdata->tdmb_lna_en > 0) {
+		rc = gpio_request(dt_pdata->tdmb_lna_en, "gpio_tdmb_lna_en");
+		if (rc < 0) {
+			DPRINTK("%s: gpio %d request failed (%d)\n",
+				__func__, dt_pdata->tdmb_lna_en, rc);
+			dt_pdata->tdmb_lna_gpio_req = false;
+		} else {
+			dt_pdata->tdmb_lna_gpio_req = true;
+		}
+	}
+
+	if (dt_pdata->fm_dtv_ctrl1 > 0) {
+		rc = gpio_request(dt_pdata->fm_dtv_ctrl1, "gpio_fm_dtv_ctrl1");
+		if (rc < 0) {
+			DPRINTK("%s: gpio %d request failed (%d)\n",
+				__func__, dt_pdata->fm_dtv_ctrl1, rc);
+			dt_pdata->fm_dtv_ctrl1_gpio_req = false;
+		} else {
+			dt_pdata->fm_dtv_ctrl1_gpio_req = true;
+		}
+	}
+	if (dt_pdata->fm_dtv_ctrl2 > 0) {
+		rc = gpio_request(dt_pdata->fm_dtv_ctrl2, "gpio_fm_dtv_ctrl2");
+		if (rc < 0) {
+			DPRINTK("%s: gpio %d request failed (%d)\n",
+				__func__, dt_pdata->fm_dtv_ctrl2, rc);
+			dt_pdata->fm_dtv_ctrl2_gpio_req = false;
+		} else {
+			dt_pdata->fm_dtv_ctrl2_gpio_req = true;
+		}
+	}
+
+
 	if (dt_pdata->tdmb_use_irq) {
 		rc = gpio_request(dt_pdata->tdmb_irq, "gpio_tdmb_irq");
 		if (rc < 0) {
 			DPRINTK("%s: gpio %d request failed (%d)\n",
 				__func__, dt_pdata->tdmb_irq, rc);
 			gpio_free(dt_pdata->tdmb_en);
+			if (dt_pdata->tdmb_1p2_en > 0)
+				gpio_free(dt_pdata->tdmb_1p2_en);
+			if (dt_pdata->tdmb_lna_gpio_req && dt_pdata->tdmb_lna_en > 0)
+				gpio_free(dt_pdata->tdmb_lna_en);
+			if (dt_pdata->fm_dtv_ctrl1_gpio_req && dt_pdata->fm_dtv_ctrl1 > 0)
+				gpio_free(dt_pdata->fm_dtv_ctrl1);
+			if (dt_pdata->fm_dtv_ctrl2_gpio_req && dt_pdata->fm_dtv_ctrl2 > 0)
+				gpio_free(dt_pdata->fm_dtv_ctrl2);
 			return;
 		}
 	}
 	if (pinctrl_select_state(dt_pdata->tdmb_pinctrl, dt_pdata->pwr_on)) {
 		DPRINTK("%s: Failed to configure tdmb_on\n", __func__);
 		gpio_free(dt_pdata->tdmb_en);
+		if (dt_pdata->tdmb_1p2_en > 0)
+			gpio_free(dt_pdata->tdmb_1p2_en);
+		if (dt_pdata->tdmb_lna_gpio_req && dt_pdata->tdmb_lna_en > 0)
+			gpio_free(dt_pdata->tdmb_lna_en);
+		if (dt_pdata->fm_dtv_ctrl1_gpio_req && dt_pdata->fm_dtv_ctrl1 > 0)
+			gpio_free(dt_pdata->fm_dtv_ctrl1);
+		if (dt_pdata->fm_dtv_ctrl2_gpio_req && dt_pdata->fm_dtv_ctrl2 > 0)
+			gpio_free(dt_pdata->fm_dtv_ctrl2);
 		if (dt_pdata->tdmb_use_irq)
 			gpio_free(dt_pdata->tdmb_irq);
 	}
@@ -171,6 +229,14 @@ static void tdmb_set_config_poweroff(void)
 		DPRINTK("%s: Failed to configure tdmb_off\n", __func__);
 
 	gpio_free(dt_pdata->tdmb_en);
+	if (dt_pdata->tdmb_1p2_en > 0)
+		gpio_free(dt_pdata->tdmb_1p2_en);
+	if (dt_pdata->tdmb_lna_gpio_req && dt_pdata->tdmb_lna_en > 0)
+		gpio_free(dt_pdata->tdmb_lna_en);
+	if (dt_pdata->fm_dtv_ctrl1_gpio_req && dt_pdata->fm_dtv_ctrl1 > 0)
+		gpio_free(dt_pdata->fm_dtv_ctrl1);
+	if (dt_pdata->fm_dtv_ctrl2_gpio_req && dt_pdata->fm_dtv_ctrl2 > 0)
+		gpio_free(dt_pdata->fm_dtv_ctrl2);
 	if (dt_pdata->tdmb_use_irq)
 		gpio_free(dt_pdata->tdmb_irq);
 }
@@ -184,8 +250,24 @@ static void tdmb_gpio_on(void)
 	tdmb_set_config_poweron();
 
 	gpio_direction_output(dt_pdata->tdmb_en, 0);
+
 	usleep_range(1000, 1000);
+
+	if (dt_pdata->tdmb_1p2_en > 0) {
+		gpio_direction_output(dt_pdata->tdmb_1p2_en, 1);
+		usleep_range(200, 200);
+	}
+
 	gpio_direction_output(dt_pdata->tdmb_en, 1);
+	if (dt_pdata->tdmb_lna_en > 0)
+		gpio_direction_output(dt_pdata->tdmb_lna_en, 1);
+
+	if ((gpio_is_valid(dt_pdata->fm_dtv_ctrl1)) &&
+				(gpio_is_valid(dt_pdata->fm_dtv_ctrl2))) {
+		gpio_direction_output(dt_pdata->fm_dtv_ctrl1, 1);
+		gpio_direction_output(dt_pdata->fm_dtv_ctrl2, 1);
+	}
+
 	usleep_range(25000, 25000);
 
 	if (dt_pdata->tdmb_use_rst) {
@@ -203,7 +285,16 @@ static void tdmb_gpio_off(void)
 	tdmb_vreg_onoff(false);
 #endif
 	gpio_direction_output(dt_pdata->tdmb_en, 0);
+	if (dt_pdata->tdmb_1p2_en > 0)
+		gpio_direction_output(dt_pdata->tdmb_1p2_en, 0);
+	if (dt_pdata->tdmb_lna_en > 0)
+		gpio_direction_output(dt_pdata->tdmb_lna_en, 0);
 
+	if ((gpio_is_valid(dt_pdata->fm_dtv_ctrl1)) &&
+				(gpio_is_valid(dt_pdata->fm_dtv_ctrl2))) {
+		gpio_direction_output(dt_pdata->fm_dtv_ctrl1, 0);
+		gpio_direction_output(dt_pdata->fm_dtv_ctrl2, 0);
+	}
 	usleep_range(1000, 1000);
 	if (dt_pdata->tdmb_use_rst)
 		gpio_direction_output(dt_pdata->tdmb_rst, 0);
@@ -255,8 +346,6 @@ static DEFINE_MUTEX(tdmb_lock);
 static bool tdmb_power_off(void)
 {
 	DPRINTK("%s : tdmb_pwr_on(%d)\n", __func__, tdmb_pwr_on);
-	mutex_lock(&tdmb_lock);
-
 	if (tdmb_pwr_on) {
 		tdmb_pwr_on = false;
 		tdmbdrv_func->power_off();
@@ -270,7 +359,6 @@ static bool tdmb_power_off(void)
 #endif
 	}
 	tdmb_last_ch = 0;
-	mutex_unlock(&tdmb_lock);
 
 	return true;
 }
@@ -292,7 +380,9 @@ tdmb_read(struct file *file, char __user *buf, size_t nbytes, loff_t *ppos)
 static int tdmb_release(struct inode *inode, struct file *filp)
 {
 	DPRINTK("tdmb_release\n");
+	mutex_lock(&tdmb_lock);
 	tdmb_power_off();
+	mutex_unlock(&tdmb_lock);
 
 #if TDMB_PRE_MALLOC
 	tdmb_ts_size = 0;
@@ -317,7 +407,11 @@ static void tdmb_make_ring_buffer(void)
 	if (size % PAGE_SIZE) /* klaatu hard coding */
 		size = size + size % PAGE_SIZE;
 
-	ts_ring = kmalloc(size, GFP_KERNEL);
+	ts_ring = kzalloc(size, GFP_KERNEL);
+	if (!ts_ring) {
+		DPRINTK("RING Buff Create Fail\n");
+		return;
+	}
 	DPRINTK("RING Buff Create OK\n");
 }
 
@@ -332,6 +426,10 @@ static int tdmb_mmap(struct file *filp, struct vm_area_struct *vma)
 
 	vma->vm_flags |= VM_RESERVED;
 	size = vma->vm_end - vma->vm_start;
+	if (size > TDMB_RING_BUFFER_MAPPING_SIZE) {
+		DPRINTK("over size given : %lx\n", size);
+		return -EAGAIN;
+	}
 	DPRINTK("size given : %lx\n", size);
 
 #if TDMB_PRE_MALLOC
@@ -343,7 +441,11 @@ static int tdmb_mmap(struct file *filp, struct vm_area_struct *vma)
 		if (size % PAGE_SIZE) /* klaatu hard coding */
 			size = size + size % PAGE_SIZE;
 
-		ts_ring = kmalloc(size, GFP_KERNEL);
+		ts_ring = kzalloc(size, GFP_KERNEL);
+		if (!ts_ring) {
+			DPRINTK("RING Buff ReAlloc Fail\n");
+			return -ENOMEM;
+		}
 #if TDMB_PRE_MALLOC
 	}
 #endif
@@ -352,8 +454,6 @@ static int tdmb_mmap(struct file *filp, struct vm_area_struct *vma)
 
 	if (remap_pfn_range(vma, vma->vm_start, pfn, size, vma->vm_page_prot))
 		return -EAGAIN;
-
-	DPRINTK("succeeded\n");
 
 	tdmb_ts_head = (unsigned int *)ts_ring;
 	tdmb_ts_tail = (unsigned int *)(ts_ring + 4);
@@ -366,10 +466,6 @@ static int tdmb_mmap(struct file *filp, struct vm_area_struct *vma)
 	tdmb_ts_size
 	= ((tdmb_ts_size / DMB_TS_SIZE) * DMB_TS_SIZE) - (30 * DMB_TS_SIZE);
 
-	DPRINTK("head : %p, tail : %p, buffer : %p, size : %x\n",
-			tdmb_ts_head, tdmb_ts_tail,
-			tdmb_ts_buffer, tdmb_ts_size);
-
 	cmd_buffer = tdmb_ts_buffer + tdmb_ts_size + 8;
 	cmd_head = (unsigned int *)(cmd_buffer - 8);
 	cmd_tail = (unsigned int *)(cmd_buffer - 4);
@@ -379,10 +475,7 @@ static int tdmb_mmap(struct file *filp, struct vm_area_struct *vma)
 
 	cmd_size = 30 * DMB_TS_SIZE - 8; /* klaatu hard coding */
 
-	DPRINTK("cmd head : %p, tail : %p, buffer : %p, size : %x\n",
-			cmd_head, cmd_tail,
-			cmd_buffer, cmd_size);
-
+	DPRINTK("succeeded\n");
 	return 0;
 }
 
@@ -420,7 +513,7 @@ static int _tdmb_cmd_update(
 		return false;
 	}
 
-	DPRINTK("%p head %d tail %d\n", cmd_buffer, head, tail);
+	DPRINTK("head %d tail %d\n", head, tail);
 
 	if (head+data_size_tmp <= size) {
 		memcpy((cmd_buffer + head),
@@ -493,10 +586,8 @@ unsigned long tdmb_get_chinfo(void)
 
 void tdmb_pull_data(struct work_struct *work)
 {
-	mutex_lock(&tdmb_lock);
 	if (tdmb_pwr_on)
 		tdmbdrv_func->pull_data();
-	mutex_unlock(&tdmb_lock);
 }
 
 bool tdmb_control_irq(bool set)
@@ -539,10 +630,6 @@ static long tdmb_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	unsigned long fig_freq = 0;
 	struct ensemble_info_type *ensemble_info;
 	struct tdmb_dm dm_buff;
-#ifdef TDMB_FCI_PTCHECK
-	struct ioctl_info info;
-	int err = 0, size = 0;
-#endif
 
 	DPRINTK("call tdmb_ioctl : 0x%x\n", cmd);
 
@@ -554,10 +641,6 @@ static long tdmb_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		DPRINTK("tdmb_ioctl : _IOC_NR(cmd) 0x%x\n", _IOC_NR(cmd));
 		return -EINVAL;
 	}
-
-#ifdef TDMB_FCI_PTCHECK
-	size = _IOC_SIZE(cmd);
-#endif
 
 	switch (cmd) {
 	case IOCTL_TDMB_GET_DATA_BUFFSIZE:
@@ -574,17 +657,26 @@ static long tdmb_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 
 	case IOCTL_TDMB_POWER_ON:
 		DPRINTK("IOCTL_TDMB_POWER_ON\n");
+		mutex_lock(&tdmb_lock);
 		ret = tdmb_power_on();
+		mutex_unlock(&tdmb_lock);
 		break;
 
 	case IOCTL_TDMB_POWER_OFF:
 		DPRINTK("IOCTL_TDMB_POWER_OFF\n");
+		mutex_lock(&tdmb_lock);
 		ret = tdmb_power_off();
+		mutex_unlock(&tdmb_lock);
 		break;
 
 	case IOCTL_TDMB_SCAN_FREQ_ASYNC:
+		mutex_lock(&tdmb_lock);
+		if (!tdmb_pwr_on) {
+			DPRINTK("IOCTL_TDMB_SCAN_FREQ_ASYNC-Not ready\n");
+			mutex_unlock(&tdmb_lock);
+			break;
+		}
 		DPRINTK("IOCTL_TDMB_SCAN_FREQ_ASYNC\n");
-
 		fig_freq = arg;
 
 		ensemble_info = vmalloc(sizeof(struct ensemble_info_type));
@@ -603,13 +695,22 @@ static long tdmb_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 
 		vfree(ensemble_info);
 		tdmb_last_ch = 0;
+		mutex_unlock(&tdmb_lock);
 		break;
 
 	case IOCTL_TDMB_SCAN_FREQ_SYNC:
-		fig_freq = ((struct ensemble_info_type *)arg)->ensem_freq;
-		DPRINTK("IOCTL_TDMB_SCAN_FREQ_SYNC %ld\n", fig_freq);
-
+		mutex_lock(&tdmb_lock);
+		if (!tdmb_pwr_on) {
+			DPRINTK("IOCTL_TDMB_SCAN_FREQ_SYNC-Not ready\n");
+			mutex_unlock(&tdmb_lock);
+			break;
+		}
 		ensemble_info = vmalloc(sizeof(struct ensemble_info_type));
+		if(copy_from_user(ensemble_info, (void *)arg, sizeof(struct ensemble_info_type)))
+			DPRINTK("cmd(%x):copy_from_user failed\n", cmd);
+		else
+			fig_freq = ensemble_info->ensem_freq;
+		DPRINTK("IOCTL_TDMB_SCAN_FREQ_SYNC %ld\n", fig_freq);
 		memset((char *)ensemble_info, 0x00\
 			, sizeof(struct ensemble_info_type));
 
@@ -624,6 +725,7 @@ static long tdmb_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 
 		vfree(ensemble_info);
 		tdmb_last_ch = 0;
+		mutex_unlock(&tdmb_lock);
 		break;
 
 	case IOCTL_TDMB_SCANSTOP:
@@ -632,6 +734,12 @@ static long tdmb_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		break;
 
 	case IOCTL_TDMB_ASSIGN_CH:
+		mutex_lock(&tdmb_lock);
+		if (!tdmb_pwr_on) {
+			DPRINTK("IOCTL_TDMB_ASSIGN_CH-Not ready\n");
+			mutex_unlock(&tdmb_lock);
+			break;
+		}
 		DPRINTK("IOCTL_TDMB_ASSIGN_CH %ld\n", arg);
 		tdmb_init_data();
 		ret = tdmbdrv_func->set_ch(arg, (arg % 1000), false);
@@ -639,9 +747,16 @@ static long tdmb_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			tdmb_last_ch = arg;
 		else
 			tdmb_last_ch = 0;
+		mutex_unlock(&tdmb_lock);
 		break;
 
 	case IOCTL_TDMB_ASSIGN_CH_TEST:
+		mutex_lock(&tdmb_lock);
+		if (!tdmb_pwr_on) {
+			DPRINTK("IOCTL_TDMB_ASSIGN_CH_TEST-Not ready\n");
+			mutex_unlock(&tdmb_lock);
+			break;
+		}
 		DPRINTK("IOCTL_TDMB_ASSIGN_CH_TEST %ld\n", arg);
 		tdmb_init_data();
 		ret = tdmbdrv_func->set_ch(arg, (arg % 1000), true);
@@ -649,59 +764,16 @@ static long tdmb_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			tdmb_last_ch = arg;
 		else
 			tdmb_last_ch = 0;
+		mutex_unlock(&tdmb_lock);
 		break;
-#ifdef TDMB_FCI_PTCHECK
-	case IOCTL_TDMB_TS_START:
-		DPRINTK("IOCTL_TDMB_TS_START\n");
-		tdmb_last_ch = 0xabcd;	//jgk: temporal value, ptcheck does not use it actually
-		break;
-	case IOCTL_TDMB_TS_STOP:
-		DPRINTK("IOCTL_TDMB_TS_STOP\n");
-		break;
-	case IOCTL_TDMB_BYTE_WRITE:
-		if (tdmbdrv_func->byte_write != NULL) {
-			err = copy_from_user((void*)&info, (void*)arg, size);
-			DPRINTK("IOCTL_TDMB_BYTE_WRITE addr(0x%x), data(0x%x)\n", (u32)info.buff[0], (u32)info.buff[1]);
-			ret = tdmbdrv_func->byte_write((u16)info.buff[0], (u8)info.buff[1]);
-			if (ret)
-				DPRINTK("IOCTL_TDMB_BYTE_WRITE fail(0x%x)\n", ret);
-		} else
-			DPRINTK("IOCTL_TDMB_BYTE_WRITE is NULL\n");
-		break;
-	case IOCTL_TDMB_BYTE_READ:
-		if (tdmbdrv_func->byte_read != NULL) {
-			err = copy_from_user((void *)&info, (void *)arg, size);
-			DPRINTK("IOCTL_TDMB_BYTE_READ addr(0x%x), data(0x%x)\n", (u32)info.buff[0], (u32)info.buff[1]);
-			ret = tdmbdrv_func->byte_read((u16)info.buff[0], (u8*)(&info.buff[1]));
-			if (ret)
-				DPRINTK("IOCTL_TDMB_BYTE_READ fail(0x%x)\n", ret);
-			err |= copy_to_user((void *)arg, (void *)&info, size);
-		} else
-			DPRINTK("IOCTL_TDMB_BYTE_READ is NULL\n");
-		break;
-	case IOCTL_TDMB_WORD_WRITE:
-		if (tdmbdrv_func->word_write != NULL) {
-			err = copy_from_user((void*)&info, (void*)arg, size);
-			DPRINTK("IOCTL_TDMB_WORD_WRITE addr(0x%x), data(0x%x)\n", (u32)info.buff[0], (u32)info.buff[1]);
-			ret = tdmbdrv_func->word_write((u16)info.buff[0], (u16)info.buff[1]);
-			if (ret)
-				DPRINTK("IOCTL_TDMB_WORD_WRITE fail(0x%x)\n", ret);
-		} else
-			DPRINTK("IOCTL_TDMB_WORD_WRITE is NULL\n");
-		break;
-	case IOCTL_TDMB_WORD_READ:
-		if (tdmbdrv_func->word_read != NULL) {
-			err = copy_from_user((void *)&info, (void *)arg, size);
-			DPRINTK("IOCTL_TDMB_WORD_READ addr(0x%x), data(0x%x)\n", (u32)info.buff[0], (u32)info.buff[1]);
-			ret = tdmbdrv_func->word_read((u16)info.buff[0], (u16*)(&info.buff[1]));
-			if (ret)
-				DPRINTK("IOCTL_TDMB_WORD_READ fail(0x%x)\n", ret);
-			err |= copy_to_user((void *)arg, (void *)&info, size);
-		} else
-			DPRINTK("IOCTL_TDMB_WORD_READ is NULL\n");
-		break;
-#endif
+
 	case IOCTL_TDMB_GET_DM:
+		mutex_lock(&tdmb_lock);
+		if (!tdmb_pwr_on) {
+			DPRINTK("IOCTL_TDMB_GET_DM-Not ready\n");
+			mutex_unlock(&tdmb_lock);
+			break;
+		}
 		tdmbdrv_func->get_dm(&dm_buff);
 		if (copy_to_user((struct tdmb_dm *)arg\
 			, &dm_buff, sizeof(struct tdmb_dm)))
@@ -709,6 +781,7 @@ static long tdmb_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		ret = true;
 		DPRINTK("rssi %d, ber %d, ANT %d\n",
 			dm_buff.rssi, dm_buff.ber, dm_buff.antenna);
+		mutex_unlock(&tdmb_lock);
 		break;
 	case IOCTL_TDMB_SET_AUTOSTART:
 		DPRINTK("IOCTL_TDMB_SET_AUTOSTART : %ld\n",arg);
@@ -739,14 +812,6 @@ static long tdmb_compat_ioctl(struct file *filp, unsigned int cmd, unsigned long
 	case IOCTL_TDMB_ASSIGN_CH_TEST:
 	case IOCTL_TDMB_GET_DM:
 	case IOCTL_TDMB_SET_AUTOSTART:
-#ifdef TDMB_FCI_PTCHECK
-	case IOCTL_TDMB_TS_START:
-	case IOCTL_TDMB_TS_STOP:
-	case IOCTL_TDMB_BYTE_WRITE:
-	case IOCTL_TDMB_BYTE_READ:
-	case IOCTL_TDMB_WORD_WRITE:
-	case IOCTL_TDMB_WORD_READ:
-#endif
 		return tdmb_ioctl(filp, cmd, arg);
 	}
 	return -ENOIOCTLCMD;
@@ -1012,6 +1077,22 @@ static struct tdmb_dt_platform_data *get_tdmb_dt_pdata(struct device *dev)
 		DPRINTK("Failed to get is valid tdmb_en\n");
 		goto alloc_err;
 	}
+	pdata->tdmb_1p2_en = of_get_named_gpio(dev->of_node, "tdmb_1p2_en", 0);
+	if (!gpio_is_valid(pdata->tdmb_1p2_en)) {
+		DPRINTK("Failed to get is valid tdmb_1p2_en\n");
+	}
+	pdata->tdmb_lna_en = of_get_named_gpio(dev->of_node, "tdmb_lna_en", 0);
+	if (!gpio_is_valid(pdata->tdmb_lna_en)) {
+		DPRINTK("Failed to get is valid tdmb_lna_en\n");
+	}
+	pdata->fm_dtv_ctrl1 = of_get_named_gpio(dev->of_node, "fm_dtv_ctrl1", 0);
+	if (!gpio_is_valid(pdata->fm_dtv_ctrl1)) {
+		DPRINTK("Failed to get is valid fm_dtv_ctrl1\n");
+	}
+	pdata->fm_dtv_ctrl2 = of_get_named_gpio(dev->of_node, "fm_dtv_ctrl2", 0);
+	if (!gpio_is_valid(pdata->fm_dtv_ctrl2)) {
+		DPRINTK("Failed to get is valid fm_dtv_ctrl2\n");
+	}
 	pdata->tdmb_use_rst = of_property_read_bool(dev->of_node, "tdmb_use_rst");
 	if (pdata->tdmb_use_rst) {
 		pdata->tdmb_rst = of_get_named_gpio(dev->of_node, "tdmb_rst", 0);
@@ -1038,7 +1119,6 @@ static struct tdmb_dt_platform_data *get_tdmb_dt_pdata(struct device *dev)
 		DPRINTK("Failed to get tdmb_xtal_freq\n");
 		goto alloc_err;
 	}
-	DPRINTK("%s : tdmb_xtal_freq: %d\n", __func__, pdata->tdmb_xtal_freq);
 #endif
 	pdata->tdmb_pinctrl = devm_pinctrl_get(dev);
 	if (IS_ERR(pdata->tdmb_pinctrl)) {

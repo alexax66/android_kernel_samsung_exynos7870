@@ -138,28 +138,74 @@ fw-shipped-$(CONFIG_USB_VICAM) += vicam/firmware.fw
 fw-shipped-$(CONFIG_VIDEO_CPIA2) += cpia2/stv0672_vp4.bin
 fw-shipped-$(CONFIG_YAM) += yam/1200.bin yam/9600.bin
 
-fw-shipped-$(CONFIG_EPEN_WACOM_W9019) += epen/w9019_gtaxlnote.bin epen/w9019_gtaxlnote_rev00.bin
+fw-shipped-$(CONFIG_EPEN_WACOM_W9019_GTANOTE) += epen/w9019_gtaxlnote.bin epen/w9019_gtaxlnote_rev00.bin 
+fw-shipped-$(CONFIG_EPEN_WACOM_W9019) += epen/w9019_gtactive2.bin
 
 fw-shipped-$(CONFIG_TOUCHSCREEN_MELFAS_MMS449) += tsp_melfas/mms449_s5neo.fw
-fw-shipped-$(CONFIG_TOUCHSCREEN_MELFAS_MMS438) += tsp_melfas/mms438_j7x.fw tsp_melfas/mms438_j7x_hd.fw tsp_melfas/mms438_a3xpre.fw
+fw-shipped-$(CONFIG_TOUCHSCREEN_MELFAS_MMS438) += tsp_melfas/mms438_j7x.fw tsp_melfas/mms438_j7x_hd.fw tsp_melfas/mms438_a3xpre_init.fw tsp_melfas/mms438_a3xpre.fw \
+													tsp_melfas/mms438_j7y17.fw tsp_melfas/mms438_j7ve.fw
 
 fw-shipped-$(CONFIG_TOUCHSCREEN_ATMEL_MXT1664) += tsp_atmel/mxt1664t_matisse.fw
 
 fw-shipped-$(CONFIG_TOUCHSCREEN_FTS7) += tsp_stm/matisse.fw tsp_stm/stm_gtaxl.fw tsp_stm/fts1a096_gtaxl_rev03.fw \
 					tsp_stm/fts1a096_gtaxl_note.fw
+fw-shipped-$(CONFIG_TOUCHSCREEN_FTS) += tsp_stm/fts8cd56_gtactive2.fw
+fw-shipped-$(CONFIG_TOUCHSCREEN_FTS1BA90A) += tsp_stm/fts1ba90a_gtadv2.fw
 
 fw-shipped-$(CONFIG_TOUCHSCREEN_ZINITIX_ZT75XX) += tsp_zinitix/zt7548_degas2.fw tsp_zinitix/zt7538_o7.fw
+fw-shipped-$(CONFIG_TOUCHSCREEN_ZINITIX_ZT75XX_TCLM) += tsp_zinitix/zt7548_a6lte.fw tsp_zinitix/zt7548_j6.fw
 
-fw-shipped-$(CONFIG_TOUCHSCREEN_SYNAPTICS_I2C_DSX2) += tsp_synaptics/td4300_on7xelte.fw
-fw-shipped-$(CONFIG_TOUCHSCREEN_SYNAPTICS_I2C_DSX2) += tsp_synaptics/td4300_on7xelte_recovery.fw
+fw-shipped-$(CONFIG_TOUCHSCREEN_ZINITIX_BT541C) += tsp_zinitix/bt541c_GPPIris.fw
 
-fw-shipped-$(CONFIG_KEYBOARD_TC300K) += coreriver/tc350k_j7x.fw
-fw-shipped-$(CONFIG_KEYBOARD_MELFAS_MHS204) += melfas_tk/melfas_mip4_tk.fw
+fw-shipped-$(CONFIG_TOUCHSCREEN_SYNAPTICS_I2C_DSX2) += tsp_synaptics/td4300_on7xelte.fw  tsp_synaptics/td4300_on7xelte_recovery.fw
+fw-shipped-$(CONFIG_TOUCHSCREEN_SYNAPTICS_I2C_DSX2) += tsp_synaptics/td4310_on7xelte.fw  tsp_synaptics/td4310_on7xelte_recovery.fw
+fw-shipped-$(CONFIG_TOUCHSCREEN_SYNAPTICS_I2C_TD4X00) += tsp_synaptics/td4100_j7pop.fw tsp_synaptics/td4100_j7pop_recovery.fw
+fw-shipped-$(CONFIG_TOUCHSCREEN_SYNAPTICS_I2C_TD4X01_A2CORELTE) += tsp_synaptics/td4101_a2corelte.fw tsp_synaptics/td4101_a2corelte_recovery.fw
+
+fw-shipped-$(CONFIG_TOUCHSCREEN_IST3032C) += tsp_imagis/ist3032c_a3x.fw tsp_imagis/ist3032c_a3x_cmcs.bin
+fw-shipped-$(CONFIG_TOUCHSCREEN_IST3038H) += tsp_imagis/ist3038h_a3x.fw tsp_imagis/ist3038h_a3x_cmcs.bin \
+						tsp_imagis/ist3038h_j5y.fw tsp_imagis/ist3038h_j5y_cmcs.bin \
+						tsp_imagis/ist3038h_a3xpre.fw tsp_imagis/ist3038h_a3xpre_cmcs.bin
+
+fw-shipped-$(CONFIG_TOUCHSCREEN_SEC_INCELL_TS) += tsp_sec/s6d7at01a01_j7toplte.fw
+
+fw-shipped-$(CONFIG_TOUCHSCREEN_SEC_TS) += tsp_sec/y761_daimler.fw tsp_sec/y761_daimler_old_rev01.fw tsp_sec/y761_daimler_old.fw
+
+fw-shipped-$(CONFIG_KEYBOARD_TC300K) += coreriver/tc350k_j7x.fw coreriver/tc305k_j7pop.fw coreriver/tc350k_j7ve.fw coreriver/tc305k_j7top.fw \
+					coreriver/tc305k_j7top_kor.fw coreriver/tc305k_j7top_gsm.fw
+fw-shipped-$(CONFIG_KEYBOARD_MELFAS_MHS204) += melfas_tk/mhs204g_on7xlte.fw
+fw-shipped-$(CONFIG_KEYBOARD_MELFAS_MHS2041B) += melfas_tk/mhs2041_j5y17.fw melfas_tk/mhs2041B_j5y17.fw melfas_tk/mhs2041B_j5y17_new.fw \
+						melfas_tk/mhs2041_j7y17.fw melfas_tk/mhs2041B_j7y17.fw melfas_tk/mhs2041B_j7y17_new.fw \
+						melfas_tk/mhs2041B_j7y17_ltn.fw melfas_tk/mhs2041B_j7y17_open.fw melfas_tk/melfas_mip4_tk.fw
 
 fw-shipped-$(CONFIG_KEYBOARD_ABOV_TOUCH_FT1804) += abov/abov_a7_max.fw
-fw-shipped-$(CONFIG_KEYBOARD_ABOV_TOUCH) += abov/abov_a3x_pre.fw
+fw-shipped-$(CONFIG_KEYBOARD_ABOV_TOUCH_T316) += abov/a96t316_a3y17.fw abov/a96t316_j5y17.fw abov/a96t316_a3xpre.fw abov/a96t316_a3xpre_new.fw abov/a96t316_a3xpre_0506.fw
+fw-shipped-$(CONFIG_KEYBOARD_ABOV_TOUCH_3X6) += abov/a96t326_next_a3p.fw
+
+#touch based grip sensor
+fw-shipped-$(CONFIG_SENSORS_ABOV_A96T316) += abov/a96t316_gppiris.fw
+fw-shipped-$(CONFIG_SENSORS_A96T3X6_J8) += abov/a96t326_j8lte.fw abov/a96t346_j8lte.fw
+fw-shipped-$(CONFIG_SENSORS_A96T3X6_A6) += abov/a96t326_a6lte.fw abov/a96t346_a6lte.fw
+fw-shipped-$(CONFIG_SENSORS_A96T3X6_J6) += abov/a96t326_j6lte.fw
+fw-shipped-$(CONFIG_SENSORS_A96T3X6_J6KOR) += abov/a96t326_j6ltekor.fw
+fw-shipped-$(CONFIG_SENSORS_TC3XXK_M10) += coreriver/tc305k_m10_grip.fw
+fw-shipped-$(CONFIG_SENSORS_A96T3X6_A2CORE) += abov/a96t346_a2core.fw
+
+#Sensor Hub
+fw-shipped-$(CONFIG_SENSORS_SSP_2017A3) += ssp_stmf410_a2017.fw
+fw-shipped-$(CONFIG_SENSORS_SSP_A3XPREMIUM) += ssp_stmf410_a3p.fw
+fw-shipped-$(CONFIG_SENSORS_SSP_A3Y17PREMIUM) += ssp_stmf410_a2017_p.fw
+fw-shipped-$(CONFIG_SENSORS_SSP_STM32) += ssp_crashed.fw
+
+# FPGA for IRIS
+fw-shipped-$(CONFIG_LEDS_IRIS_FPGA_ICE40XX) += ice40xx/ice40_fpga_iris_V01.fw
+
+fw-shipped-$(CONFIG_FIVE_TEE_DRIVER) += five/ffffffff000000000000000000000072.tlbin
 
 fw-shipped-all := $(fw-shipped-y) $(fw-shipped-m) $(fw-shipped-)
+
+# Directories which we _might_ need to create, so we have a rule for them.
+firmware-dirs := $(sort $(addprefix $(objtree)/$(obj)/,$(dir $(fw-external-y) $(fw-shipped-all))))
 
 quiet_cmd_ihex  = IHEX    $@
       cmd_ihex  = $(OBJCOPY) -Iihex -Obinary $< $@
@@ -181,7 +227,7 @@ quiet_cmd_fwbin = MK_FW   $@
 		  echo "    .section .rodata"				>>$@;\
 		  echo "    .p2align $${ASM_ALIGN}"			>>$@;\
 		  echo "_fw_$${FWSTR}_bin:"				>>$@;\
-		  echo "    .incbin \"$(2)\""				>>$@;\
+		  echo "    .incbin \"$(srctree)/$(2)\""				>>$@;\
 		  echo "_fw_end:"					>>$@;\
 		  echo "   .section .rodata.str,\"aMS\",$${PROGBITS},1"	>>$@;\
 		  echo "    .p2align $${ASM_ALIGN}"			>>$@;\

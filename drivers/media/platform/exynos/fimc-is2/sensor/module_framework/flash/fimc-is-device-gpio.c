@@ -175,10 +175,12 @@ int flash_gpio_probe(struct device *dev, struct i2c_client *client)
 		goto p_err;
 	}
 
+	probe_info("%s sensor_id %d\n", __func__, sensor_id);
+
 	device = &core->sensor[sensor_id];
-	if (!device) {
-		err("sensor device is NULL");
-		ret = -ENOMEM;
+	if (!test_bit(FIMC_IS_SENSOR_PROBE, &device->state)) {
+		err("sensor device is not yet probed");
+		ret = -EPROBE_DEFER;
 		goto p_err;
 	}
 
@@ -231,6 +233,7 @@ int flash_gpio_probe(struct device *dev, struct i2c_client *client)
 	snprintf(subdev_flash->name, V4L2_SUBDEV_NAME_SIZE, "flash-subdev.%d", flash->id);
 
 p_err:
+	probe_info("%s done\n", __func__);
 	return ret;
 }
 

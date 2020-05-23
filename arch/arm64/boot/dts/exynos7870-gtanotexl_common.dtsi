@@ -9,8 +9,8 @@
  * published by the Free Software Foundation.
 */
 
-#include "exynos7870.dtsi"
 #include "exynos7870-rmem-3000MB-WUXGA.dtsi"
+#include "exynos7870.dtsi"
 
 / {
 	model = "Samsung Galaxy Tab A Note board based on Exynos7870";
@@ -334,6 +334,15 @@
 			samsung,pins = "gpc0-0";
 			samsung,pin-pud = <1>;
 			samsung,pin-pud-pdn = <1>;
+		};
+	};
+
+	pinctrl@13750000 {	
+		sd2_clk: sd2-clk {
+			samsung,pins = "gpr4-0";
+			samsung,pin-function = <2>;
+			samsung,pin-pud = <0>;
+			samsung,pin-drv = <3>;
 		};
 	};
 
@@ -1494,29 +1503,36 @@
 
 	dsim_0: dsim@14800000 {
 		lcd_info = <&hx8279d>;
-		decon_board = <&decon_board_list>;
-		/* lcd reset, power */
-		/* gpios = <&gpd3 4 0x1>, <&gpd1 5 0x1>; */
+		decon_board = <&decon_board>;
 		status = "okay";
 	};
 
-	decon_board_list: decon_board_list {
+	decon_board: decon_board {
+		gpio_buck_en = <&gpd3 4 0x1>;
+		gpio_lcd_rst = <&gpd4 1 0x1>;
+
 		dsim_set_panel_power_enable {
-			type = "regulator,enable", "delay,usleep", "gpio,high", "delay,usleep";
-			gpios = <&gpd3 4 0x1>;
-			regulator = "LCD_1P8";
-			delay = <10000 11000>, <15000 16000>;
+			type =
+			"regulator,enable",	"LCD_1P8",
+			"delay,usleep",	"10000 11000",
+			"gpio,high",	"gpio_buck_en",
+			"delay,usleep",	"15000 16000";
 		};
 		dsim_set_panel_power_disable {
-			type = "gpio,low", "gpio,low", "delay,usleep", "regulator,disable";
-			gpios = <&gpd4 1 0x1>, <&gpd3 4 0x1>;
-			regulator = "LCD_1P8";
-			delay = <10000 11000>;
+			type =
+			"gpio,low",	"gpio_lcd_rst",
+			"gpio,low",	"gpio_buck_en",
+			"delay,usleep",	"10000 11000",
+			"regulator,disable",	"LCD_1P8";
 		};
 		dsim_reset_panel {
-			type = "gpio,high", "delay,usleep", "gpio,low", "delay,usleep", "gpio,high", "delay,usleep";
-			gpios = <&gpd4 1 0x1>, <&gpd4 1 0x1>, <&gpd4 1 0x1>;
-			delay = <10000 11000>, <10000 11000>, <10000 11000>;
+			type =
+			"gpio,high",	"gpio_lcd_rst",
+			"delay,usleep",	"10000 11000",
+			"gpio,low",	"gpio_lcd_rst",
+			"delay,usleep",	"10000 11000",
+			"gpio,high",	"gpio_lcd_rst",
+			"delay,usleep",	"10000 11000";
 		};
 	};
 
@@ -1555,7 +1571,7 @@
 		compatible = "samsung,argos";
 		#address-cells = <1>;
 		boot_device@1 {
-			net_boost,label="WIFI";
+			net_boost,label="WIFI TX";
 			net_boost,node="wlan0";
 			net_boost,table_size = <3>;
 			net_boost,table= <
@@ -1564,6 +1580,7 @@
 				120 1352000 0  1352000 0 0 0 0 0
 			>;
 		};
+
 		boot_device@2 {
 			net_boost,label="P2P";
 			net_boost,node="p2p-wlan0-0";
@@ -1607,6 +1624,14 @@
                         net_boost,sysnode="/sys/class/mmc_host/mmc0/trans_count";
                         net_boost,table_size = <1>;
                         net_boost,table= <128 0 0 546000 0 0 400000 0 0>;
+                };
+		boot_device@7 {
+                        net_boost,label="WIFI RX";
+                        net_boost,node="wlan0";
+                        net_boost,table_size = <1>;
+                        net_boost,table= <
+                                100 1352000 0  1352000 0 0 0 0 0
+                                >;
                 };
         };
 

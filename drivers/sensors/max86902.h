@@ -290,7 +290,7 @@ struct max86900_device_data
 	u64 old_timestamp;
 };
 
-extern int sensors_register(struct device *dev, void * drvdata,
+extern int sensors_register(struct device **dev, void * drvdata,
 	struct device_attribute *attributes[], char *name);
 extern void sensors_unregister(struct device *dev,
 	struct device_attribute *attributes[]);

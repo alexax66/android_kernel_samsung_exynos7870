@@ -94,8 +94,10 @@
 #define FW_2P2_C		"C16LL"
 #define FW_3L2			"C13LL"
 #define FW_3L2_V		"V13LL"
+#define FW_3M3			"V13LL"
 #define FW_IMX135		"C13LS"
 #define FW_IMX134		"D08LS"
+#define FW_IMX219		"S08LS"
 #define FW_IMX228		"A20LS"
 #define FW_IMX240_A		"A16LS"
 #define FW_IMX240_B		"B16LS"
@@ -103,26 +105,38 @@
 #define FW_IMX240_Q		"H16US"
 #define FW_IMX240_Q_C1		"H16UL"
 #define FW_IMX258		"W13LS"
+#define FW_IMX258_F1P7	"X13LS"
 #define FW_IMX260		"C12LS"
 #define FW_2P2_12M		"G16LL"
 #define FW_4H5			"F08LL"
 #define FW_2P3			"J16LL"
 #define FW_2T2			"A20LL"
 #define FW_SR544		"L05LF"
+#define FW_3P8			"N16LL"
+#define FW_2P6			"U16LL"
+#define FW_2P6_FRONT	"S16LL"
 
 #define SDCARD_FW
 #define FIMC_IS_FW_2P2				"fimc_is_fw2_2p2.bin"
 #define FIMC_IS_FW_2P2_12M				"fimc_is_fw2_2p2_12m.bin"
 #define FIMC_IS_FW_2P3				"fimc_is_fw2_2p3.bin"
 #ifdef USE_ONE_BINARY
+#define FIMC_IS_FW_GC5035			"fimc_is_lib.bin"
+#define FIMC_IS_FW_S5K5E9		    "fimc_is_lib.bin"
+#define FIMC_IS_FW_3M3				"fimc_is_lib.bin"
 #define FIMC_IS_FW_3L2				"fimc_is_lib.bin"
 #define FIMC_IS_FW_3P3				"fimc_is_lib.bin"
+#define FIMC_IS_FW_3P8				"fimc_is_lib.bin"
 #define FIMC_IS_FW_SR544			"fimc_is_lib.bin"
 #define FIMC_IS_FW_4H5YC			"fimc_is_lib.bin"
+#define FIMC_IS_FW_IMX219			"fimc_is_lib.bin"
 #define FIMC_IS_FW_IMX258			"fimc_is_lib.bin"
+#define FIMC_IS_FW_2P6				"fimc_is_lib.bin"
+#define FIMC_IS_FW_2P6_FRONT		"fimc_is_lib.bin"
 #else
 #define FIMC_IS_FW_3L2				"fimc_is_fw2_3l2.bin"
 #define FIMC_IS_FW_3P3				"fimc_is_fw2_3p3.bin"
+#define FIMC_IS_FW_3P8				"fimc_is_fw2_3p8.bin"
 #define FIMC_IS_FW_SR544			"fimc_is_fw2_sr544.bin"
 #define FIMC_IS_FW_4H5YC			"fimc_is_fw2_4h5yc.bin"
 #endif
@@ -146,20 +160,29 @@
 #define FIMC_IS_IMX258_SETF			"setfile_imx258.bin"
 #define FIMC_IS_IMX240_SETF			"setfile_imx240.bin"
 #define FIMC_IS_IMX228_SETF			"setfile_imx228.bin"
+#define FIMC_IS_IMX219_SETF			"setfile_imx219.bin"
 #define FIMC_IS_IMX135_SETF			"setfile_imx135.bin"
 #define FIMC_IS_IMX134_SETF			"setfile_imx134.bin"
 #define FIMC_IS_4H5_SETF			"setfile_4h5.bin"
 #define FIMC_IS_4H5YC_SETF			"setfile_4h5yc.bin"
+#define FIMC_IS_3M3_SETF			"setfile_3m3.bin"
 #define FIMC_IS_3L2_SETF			"setfile_3l2.bin"
+#define FIMC_IS_5E9_SETF			"setfile_5e9.bin"
+#define FIMC_IS_5E9_FRONT_SETF			"setfile_5e9_front.bin"
 #define FIMC_IS_6B2_SETF			"setfile_6b2.bin"
 #define FIMC_IS_8B1_SETF			"setfile_8b1.bin"
 #define FIMC_IS_6D1_SETF			"setfile_6d1.bin"
 #define FIMC_IS_2P2_SETF			"setfile_2p2.bin"
 #define FIMC_IS_3P3_SETF			"setfile_3p3.bin"
+#define FIMC_IS_3P8_SETF			"setfile_3p8.bin"
 #define FIMC_IS_2P2_12M_SETF			"setfile_2p2_12m.bin"
 #define FIMC_IS_2T2_SETF			"setfile_2t2.bin"
 #define FIMC_IS_2P3_SETF			"setfile_2p3.bin"
 #define FIMC_IS_SR544_SETF			"setfile_sr544.bin"
+#define FIMC_IS_2P6_SETF			"setfile_2p6.bin"
+#define FIMC_IS_2P6_FRONT_SETF			"setfile_2p6_front.bin"
+#define FIMC_IS_GC5035_SETF			"setfile_gc5035.bin"
+
 #define FIMC_IS_COMPANION_MASTER_SETF			"companion_master_setfile.bin"
 #define FIMC_IS_COMPANION_MODE_SETF			"companion_mode_setfile.bin"
 #define FIMC_IS_COMPANION_2P2_MASTER_SETF			"companion_2p2_master_setfile.bin"
@@ -188,6 +211,7 @@
 #define FIMC_IS_CAL_MAP_VER_SIZE     4
 #define FIMC_IS_PROJECT_NAME_SIZE    8
 #define FIMC_IS_ISP_SETFILE_VER_SIZE 6
+#define FIMC_IS_SENSOR_ID_SIZE       16
 #define FIMC_IS_MODULE_ID_SIZE       10
 
 #if defined(CONFIG_CAMERA_EEPROM_SUPPORT_OIS)
@@ -248,6 +272,7 @@ struct fimc_is_from_info {
 	u32		concord_cal_section_crc_addr;
 	u32		af_cal_pan;
 	u32		af_cal_macro;
+	u32		mtf_data_addr;
 	char		header_ver[FIMC_IS_HEADER_VER_SIZE + 1];
 	char		cal_map_ver[FIMC_IS_CAL_MAP_VER_SIZE + 1];
 	char		setfile_ver[FIMC_IS_SETFILE_VER_SIZE + 1];
@@ -257,7 +282,9 @@ struct fimc_is_from_info {
 	char		load_fw_name[50];
 	char		load_setfile_name[50];
 	char		project_name[FIMC_IS_PROJECT_NAME_SIZE + 1];
+	char		from_sensor_id[FIMC_IS_SENSOR_ID_SIZE + 1];
 	u8		module_id[FIMC_IS_MODULE_ID_SIZE + 1];
+	u8		eeprom_front_module_id[FIMC_IS_MODULE_ID_SIZE + 1];
 	bool		is_caldata_read;
 	bool		is_check_cal_reload;
 #ifdef CONFIG_COMPANION_USE
@@ -363,11 +390,19 @@ ssize_t write_data_to_file(char *name, char *buf, size_t count, loff_t *pos);
 ssize_t read_data_from_file(char *name, char *buf, size_t count, loff_t *pos);
 bool fimc_is_sec_file_exist(char *name);
 
+int fimc_is_sec_get_max_cal_size(int position);
+int fimc_is_sec_get_sysfs_finfo_by_position(int position, struct fimc_is_from_info **finfo);
 int fimc_is_sec_get_sysfs_finfo(struct fimc_is_from_info **finfo);
 int fimc_is_sec_get_sysfs_pinfo(struct fimc_is_from_info **pinfo);
 int fimc_is_sec_get_sysfs_finfo_front(struct fimc_is_from_info **finfo);
 int fimc_is_sec_get_sysfs_pinfo_front(struct fimc_is_from_info **pinfo);
+int fimc_is_sec_get_sysfs_finfo_rear2(struct fimc_is_from_info **finfo);
+int fimc_is_sec_get_sysfs_pinfo_rear2(struct fimc_is_from_info **pinfo);
+int fimc_is_sec_get_sysfs_finfo_rear3(struct fimc_is_from_info **finfo);
+int fimc_is_sec_get_sysfs_pinfo_rear3(struct fimc_is_from_info **pinfo);
 int fimc_is_sec_get_front_cal_buf(char **buf);
+int fimc_is_sec_get_rear2_cal_buf(char **buf);
+int fimc_is_sec_get_rear3_cal_buf(char **buf);
 
 int fimc_is_sec_get_cal_buf(char **buf);
 int fimc_is_sec_get_loaded_fw(char **buf);
@@ -379,7 +414,7 @@ int fimc_is_sec_get_camid_from_hal(char *fw_name, char *setf_name);
 int fimc_is_sec_get_camid(void);
 int fimc_is_sec_set_camid(int id);
 int fimc_is_sec_get_pixel_size(char *header_ver);
-int fimc_is_sec_fw_find(struct fimc_is_core *core);
+int fimc_is_sec_fw_find(struct fimc_is_core *core, int position);
 int fimc_is_sec_check_reload(struct fimc_is_core *core);
 int fimc_is_sec_run_fw_sel(struct device *dev, int position);
 

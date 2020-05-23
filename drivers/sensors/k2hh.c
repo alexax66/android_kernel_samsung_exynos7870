@@ -45,7 +45,7 @@
 #define K2HH_DEFAULT_DELAY            200000000LL
 #define K2HH_MIN_DELAY                5000000LL
 
-#define CHIP_ID_RETRIES               3
+#define CHIP_ID_RETRIES               5
 #define ACCEL_LOG_TIME                15 /* 15 sec */
 
 #define K2HH_TOP_UPPER_RIGHT          0
@@ -470,6 +470,7 @@ static int k2hh_set_mode(struct k2hh_p *data, unsigned char mode)
 		ret = k2hh_i2c_read(data, CTRL1_REG, &temp, 1);
 		buf = ((mask & data->odr) | ((~mask) & temp));
 		buf = data->hr | ((~CTRL1_HR_MASK) & buf);
+		buf = CTRL1_BDU_ENABLE | ((~CTRL1_BDU_MASK) & buf);
 		ret += k2hh_i2c_write(data, CTRL1_REG, buf);
 		break;
 	case K2HH_MODE_SUSPEND:
@@ -643,12 +644,12 @@ static void k2hh_work_func(struct work_struct *work)
 		acc.z > ACCEL_MAX_OUTPUT)
 	{
 		unsigned char buf[4], status;
-		k2hh_i2c_read(data, CTRL1_REG, buf, 4);	
+		k2hh_i2c_read(data, CTRL1_REG, buf, 4);
 		k2hh_i2c_read(data, STATUS_REG, &status, 1);
 
 		SENSOR_INFO("MAX_OUTPUT x = %d, y = %d, z = %d\n",
 				acc.x, acc.y,acc.z);
-		SENSOR_INFO("CTRL(20~23) : %X, %X, %X, %X - STATUS(27h) : %X\n", 
+		SENSOR_INFO("CTRL(20~23) : %X, %X, %X, %X - STATUS(27h) : %X\n",
 			buf[0],buf[1],buf[2],buf[3],status);
 	}
 #endif
@@ -735,9 +736,9 @@ static ssize_t k2hh_enable_store(struct device *dev,
 		}
 	} else {
 		if (pre_enable == ON) {
+			k2hh_set_enable(data, OFF);
 			atomic_set(&data->enable, OFF);
 			k2hh_set_mode(data, K2HH_MODE_SUSPEND);
-			k2hh_set_enable(data, OFF);
 		}
 	}
 
@@ -820,7 +821,7 @@ static ssize_t k2hh_calibration_show(struct device *dev,
 	if (ret < 0)
 		SENSOR_ERR(" calibration open failed(%d)\n", ret);
 
-	SENSOR_INFO("cal data %d %d %d - ret : %d\n", 
+	SENSOR_INFO("cal data %d %d %d - ret : %d\n",
 		data->caldata.x, data->caldata.y, data->caldata.z, ret);
 
 	return snprintf(buf, PAGE_SIZE, "%d %d %d %d\n", ret, data->caldata.x,
@@ -1436,7 +1437,7 @@ static int k2hh_probe(struct i2c_client *client,
 	if (ret < 0)
 		goto exit_input_init;
 
-	sensors_register(data->factory_device, data, sensor_attrs,
+	sensors_register(&data->factory_device, data, sensor_attrs,
 		MODULE_NAME);
 
 	/* accel_timer settings. we poll for light values using a timer. */
@@ -1541,8 +1542,8 @@ static int k2hh_suspend(struct device *dev)
 	SENSOR_INFO("\n");
 
 	if (atomic_read(&data->enable) == ON) {
-		k2hh_set_mode(data, K2HH_MODE_SUSPEND);
 		k2hh_set_enable(data, OFF);
+		k2hh_set_mode(data, K2HH_MODE_SUSPEND);
 	}
 
 	return 0;

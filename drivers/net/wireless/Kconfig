@@ -278,6 +278,12 @@ config QCA9377_LDO_RESET
 	---help---
 	  This is a configuration for qualcomm WLAN LDO issue.
 
+config WLAN_QCA9377_DUAL_BDF
+	int "QCA9377 DUAL bdf issue for HW change"
+	default 0
+	---help---
+	  This is a configuration for HW change issue.
+
 config CNSS_SDIO
 	tristate "Flag to enable platform driver for SIDO based wifi device"
 	depends on MMC_DW
@@ -288,7 +294,11 @@ config CNSS_SDIO
 	  supported for other buses.
 	  This Flag is used by CLD Driver to use the SDIO GPL API's through
 	  CNSS Platform Driver.
-	  
+
+config WLAN_SSR_ENABLED
+	bool "Enable SSR for recovery"
+	default n
+
 config WCNSS_MEM_PRE_ALLOC
 	tristate "WCNSS pre-alloc memory support"
 	---help---
@@ -298,6 +308,7 @@ source "drivers/net/wireless/ath/Kconfig"
 source "drivers/net/wireless/b43/Kconfig"
 source "drivers/net/wireless/b43legacy/Kconfig"
 source "drivers/net/wireless/bcmdhd/Kconfig"
+source "drivers/net/wireless/bcmdhd_1_77/Kconfig"
 source "drivers/net/wireless/brcm80211/Kconfig"
 source "drivers/net/wireless/hostap/Kconfig"
 source "drivers/net/wireless/ipw2x00/Kconfig"
@@ -313,5 +324,6 @@ source "drivers/net/wireless/zd1211rw/Kconfig"
 source "drivers/net/wireless/mwifiex/Kconfig"
 source "drivers/net/wireless/cw1200/Kconfig"
 source "drivers/net/wireless/rsi/Kconfig"
+source "drivers/net/wireless/qcacld-2.0/Kconfig"
 
 endif # WLAN

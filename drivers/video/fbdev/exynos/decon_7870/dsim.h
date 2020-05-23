@@ -36,21 +36,21 @@
 
 #define dsim_err(fmt, ...)					\
 	do {							\
-		pr_err(pr_fmt(fmt), ##__VA_ARGS__);		\
+		pr_err(pr_fmt("dsim: " fmt), ##__VA_ARGS__);		\
 	} while (0)
 
 #define dsim_info(fmt, ...)					\
 	do {							\
-		pr_info(pr_fmt(fmt), ##__VA_ARGS__);		\
+		pr_info(pr_fmt("dsim: " fmt), ##__VA_ARGS__);		\
 	} while (0)
 
 #define dsim_dbg(fmt, ...)					\
 	do {							\
-		pr_debug(pr_fmt(fmt), ##__VA_ARGS__);		\
+		pr_debug(pr_fmt("dsim: " fmt), ##__VA_ARGS__);		\
 	} while (0)
 
 #define call_panel_ops(q, op, args...)				\
-	(((q)->panel_ops->op) ? ((q)->panel_ops->op(args)) : 0)
+	(((q) && ((q)->panel_ops->op)) ? ((q)->panel_ops->op(args)) : 0)
 
 extern struct dsim_device *dsim0_for_decon;
 extern struct dsim_device *dsim1_for_decon;
@@ -59,8 +59,6 @@ extern struct dsim_device *dsim1_for_decon;
 #define PANEL_STATE_RESUMED		1
 #define PANEL_STATE_SUSPENDING	2
 
-#define PANEL_DISCONNEDTED		0
-#define PANEL_CONNECTED			1
 
 enum mipi_dsim_pktgo_state {
 	DSIM_PKTGO_DISABLED,
@@ -75,6 +73,14 @@ enum dsim_state {
 	DSIM_STATE_SUSPEND	/* DSIM is suspend state */
 };
 
+#ifdef CONFIG_EXYNOS_MIPI_DSI_ENABLE_EARLY
+enum dsim_enable_early {
+	DSIM_ENABLE_EARLY_NORMAL,
+	DSIM_ENABLE_EARLY_REQUEST,
+	DSIM_ENABLE_EARLY_DONE
+};
+#endif
+
 struct dsim_resources {
 	struct clk *pclk;
 	struct clk *dphy_esc;
@@ -86,7 +92,7 @@ struct dsim_resources {
 };
 
 struct panel_private {
-	unsigned int lcdConnected;
+	unsigned int lcdconnected;
 	void *par;
 };
 
@@ -98,6 +104,9 @@ struct dsim_device {
 	void __iomem *reg_base;
 
 	enum dsim_state state;
+#ifdef CONFIG_EXYNOS_MIPI_DSI_ENABLE_EARLY
+	enum dsim_enable_early enable_early;
+#endif
 
 	unsigned int data_lane;
 	unsigned long hs_clk;
@@ -123,8 +132,15 @@ struct dsim_device {
 	struct panel_private priv;
 	struct dsim_clks_param clks_param;
 	struct phy *phy;
+#ifdef CONFIG_LCD_DOZE_MODE
+	unsigned int doze_state;
+#endif
 
 	int octa_id;
+#ifdef CONFIG_EXYNOS_MIPI_DSI_ENABLE_EARLY
+	int	*enable_early_irq;
+	struct notifier_block	pm_notifier;
+#endif
 };
 
 /**
@@ -136,13 +152,18 @@ struct dsim_device {
  */
 
 struct mipi_dsim_lcd_driver {
+	char	*name;
 	int	(*early_probe)(struct dsim_device *dsim);
 	int	(*probe)(struct dsim_device *dsim);
 	int	(*suspend)(struct dsim_device *dsim);
 	int	(*displayon)(struct dsim_device *dsim);
-	int	(*displayon_late)(struct dsim_device *dsim);
+	int	(*resume_early)(struct dsim_device *dsim);
 	int	(*resume)(struct dsim_device *dsim);
 	int	(*dump)(struct dsim_device *dsim);
+#ifdef CONFIG_LCD_DOZE_MODE
+	int	(*enteralpm)(struct dsim_device *dsim);
+	int	(*exitalpm)(struct dsim_device *dsim);
+#endif
 };
 
 int dsim_write_data(struct dsim_device *dsim, unsigned int data_id,
@@ -230,5 +251,14 @@ u32 dsim_reg_get_xres(u32 id);
 #define DSIM_IOC_SET_PORCH		_IOW('D', 7, struct decon_lcd *)
 #define DSIM_IOC_DUMP			_IOW('D', 8, u32)
 #define DSIM_IOC_VSYNC			_IOW('D', 9, u32)
+#define DSIM_IOC_PANEL_DUMP		_IOW('D', 10, u32)
 
+enum dsim_pwr_mode {
+	DSIM_REQ_POWER_OFF,
+	DSIM_REQ_POWER_ON,
+#ifdef CONFIG_LCD_DOZE_MODE
+	DSIM_REQ_DOZE_MODE,
+	DSIM_REQ_DOZE_SUSPEND
+#endif
+};
 #endif /* __DSIM_H__ */

@@ -24,6 +24,7 @@ struct mip4_tk_platform_data {
 	u32 gpio_bus_en;
 	const char *pwr_reg_name;
 	const char *bus_reg_name;
+	const char *firmware_name;
 #if MIP_USE_CALLBACK
 	void (*register_callback) (void *);
 	/* ... */

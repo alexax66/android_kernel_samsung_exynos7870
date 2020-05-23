@@ -14,7 +14,13 @@
 #include <linux/module.h>
 #include <linux/slab.h>
 #include <linux/sort.h>
+#include <linux/of.h>
+#include <linux/sched.h>
 #include <linux/cputime.h>
+#ifdef CONFIG_LOAD_BASED_CORE_CURRENT_CAL
+#include <soc/samsung/cpufreq.h>
+extern unsigned int get_cpu_load(int cpu);
+#endif
 
 static spinlock_t cpufreq_stats_lock;
 
@@ -38,15 +44,25 @@ struct all_cpufreq_stats {
 	unsigned int *freq_table;
 };
 
+struct cpufreq_power_stats {
+	unsigned int state_num;
+	unsigned int *curr;
+	unsigned int *freq_table;
+};
+
 struct all_freq_table {
 	unsigned int *freq_table;
 	unsigned int table_size;
+#ifdef CONFIG_LOAD_BASED_CORE_CURRENT_CAL
+	u64 *time_for_clust0;
+#endif
 };
 
 static struct all_freq_table *all_freq_table;
 
 static DEFINE_PER_CPU(struct all_cpufreq_stats *, all_cpufreq_stats);
 static DEFINE_PER_CPU(struct cpufreq_stats *, cpufreq_stats_table);
+static DEFINE_PER_CPU(struct cpufreq_power_stats *, cpufreq_power_stats);
 
 struct cpufreq_stats_attribute {
 	struct attribute attr;
@@ -58,7 +74,11 @@ static int cpufreq_stats_update(unsigned int cpu)
 	struct cpufreq_stats *stat;
 	struct all_cpufreq_stats *all_stat;
 	unsigned long long cur_time;
-
+#ifdef CONFIG_LOAD_BASED_CORE_CURRENT_CAL
+	int i;
+	unsigned int curr_cpu_load;
+	unsigned long long update_highload_time;
+#endif
 	cur_time = get_jiffies_64();
 	spin_lock(&cpufreq_stats_lock);
 	stat = per_cpu(cpufreq_stats_table, cpu);
@@ -73,6 +93,18 @@ static int cpufreq_stats_update(unsigned int cpu)
 		if (all_stat)
 			all_stat->time_in_state[stat->last_index] +=
 					cur_time - stat->last_time;
+#ifdef CONFIG_LOAD_BASED_CORE_CURRENT_CAL
+		if (all_freq_table->time_for_clust0) {
+			for (i = cpu; i < cpu + NR_CLUST0_CPUS; i++) {
+				curr_cpu_load = get_cpu_load(i);
+				if (curr_cpu_load == 0)
+					continue;
+				update_highload_time = (cur_time - stat->last_time) * curr_cpu_load;
+				do_div(update_highload_time, 100);
+				all_freq_table->time_for_clust0[all_freq_table->table_size-stat->last_index-1] += (update_highload_time);
+			}
+		}
+#endif
 	}
 	stat->last_time = cur_time;
 	spin_unlock(&cpufreq_stats_lock);
@@ -116,6 +148,75 @@ static int get_index_all_cpufreq_stat(struct all_cpufreq_stats *all_stat,
 	}
 	return -1;
 }
+
+void acct_update_power(struct task_struct *task, cputime_t cputime) {
+	struct cpufreq_power_stats *powerstats;
+	struct cpufreq_stats *stats;
+	unsigned int cpu_num, curr;
+
+	if (!task)
+		return;
+	cpu_num = task_cpu(task);
+	powerstats = per_cpu(cpufreq_power_stats, cpu_num);
+	stats = per_cpu(cpufreq_stats_table, cpu_num);
+	if (!powerstats || !stats)
+		return;
+
+	curr = powerstats->curr[stats->last_index];
+	if (task->cpu_power != ULLONG_MAX)
+		task->cpu_power += curr * cputime_to_usecs(cputime);
+}
+EXPORT_SYMBOL_GPL(acct_update_power);
+
+static ssize_t show_current_in_state(struct kobject *kobj,
+		struct kobj_attribute *attr, char *buf)
+{
+	ssize_t len = 0;
+	unsigned int i, cpu;
+	struct cpufreq_power_stats *powerstats;
+
+	spin_lock(&cpufreq_stats_lock);
+	for_each_possible_cpu(cpu) {
+		powerstats = per_cpu(cpufreq_power_stats, cpu);
+		if (!powerstats)
+			continue;
+		len += scnprintf(buf + len, PAGE_SIZE - len, "CPU%d:", cpu);
+		for (i = 0; i < powerstats->state_num; i++)
+			len += scnprintf(buf + len, PAGE_SIZE - len,
+					"%d=%d ", powerstats->freq_table[i],
+					powerstats->curr[i]);
+		len += scnprintf(buf + len, PAGE_SIZE - len, "\n");
+	}
+	spin_unlock(&cpufreq_stats_lock);
+	return len;
+}
+
+#ifdef CONFIG_LOAD_BASED_CORE_CURRENT_CAL
+static ssize_t show_cpu_time_for_clust0(struct kobject *kobj,
+		struct kobj_attribute *attr, char *buf)
+{
+	ssize_t len = 0;
+	unsigned int cpu = 0;
+	int i;
+
+	for_each_possible_cpu(cpu) {
+		if (cpu_online(cpu))
+			cpufreq_stats_update(cpu);
+	}
+
+	if (!all_freq_table) {
+		pr_info("%s: all_freq_table is null!\n", __func__);
+		return len;
+	}
+
+	for (i = all_freq_table->table_size-1; i >= 0; i--) {
+		len += sprintf(buf + len, "%u %llu\n", all_freq_table->freq_table[i],
+			(unsigned long long) jiffies_64_to_clock_t(all_freq_table->time_for_clust0[i]));
+	}
+
+	return len;
+}
+#endif
 
 static ssize_t show_all_time_in_state(struct kobject *kobj,
 		struct kobj_attribute *attr, char *buf)
@@ -223,8 +324,15 @@ static struct attribute_group stats_attr_group = {
 	.name = "stats"
 };
 
+#ifdef CONFIG_LOAD_BASED_CORE_CURRENT_CAL
+static struct kobj_attribute _attr_cpu_time_for_clust0 = __ATTR(time_in_load_state0,
+		0444, show_cpu_time_for_clust0, NULL);
+#endif
 static struct kobj_attribute _attr_all_time_in_state = __ATTR(all_time_in_state,
 		0444, show_all_time_in_state, NULL);
+
+static struct kobj_attribute _attr_current_in_state = __ATTR(current_in_state,
+		0444, show_current_in_state, NULL);
 
 static int freq_table_get_index(struct cpufreq_stats *stat, unsigned int freq)
 {
@@ -281,23 +389,41 @@ static void cpufreq_allstats_free(void)
 		per_cpu(all_cpufreq_stats, cpu) = NULL;
 	}
 	if (all_freq_table) {
+#ifdef CONFIG_LOAD_BASED_CORE_CURRENT_CAL
+		sysfs_remove_file(cpufreq_global_kobject, &_attr_cpu_time_for_clust0.attr);
+		kfree(all_freq_table->time_for_clust0);
+#endif
 		kfree(all_freq_table->freq_table);
 		kfree(all_freq_table);
 		all_freq_table = NULL;
 	}
 }
 
-static int __cpufreq_stats_create_table(struct cpufreq_policy *policy)
+static void cpufreq_powerstats_free(void)
 {
-	unsigned int i, count = 0, ret = 0;
+	int cpu;
+	struct cpufreq_power_stats *powerstats;
+
+	sysfs_remove_file(cpufreq_global_kobject, &_attr_current_in_state.attr);
+
+	for_each_possible_cpu(cpu) {
+		powerstats = per_cpu(cpufreq_power_stats, cpu);
+		if (!powerstats)
+			continue;
+		kfree(powerstats->curr);
+		kfree(powerstats);
+		per_cpu(cpufreq_power_stats, cpu) = NULL;
+	}
+}
+
+static int __cpufreq_stats_create_table(struct cpufreq_policy *policy,
+		struct cpufreq_frequency_table *table, int count)
+{
+	unsigned int i, ret = 0;
 	struct cpufreq_stats *stat;
 	unsigned int alloc_size;
 	unsigned int cpu = policy->cpu;
-	struct cpufreq_frequency_table *pos, *table;
-
-	table = cpufreq_frequency_get_table(cpu);
-	if (unlikely(!table))
-		return 0;
+	struct cpufreq_frequency_table *pos;
 
 	if (per_cpu(cpufreq_stats_table, cpu))
 		return -EBUSY;
@@ -311,9 +437,6 @@ static int __cpufreq_stats_create_table(struct cpufreq_policy *policy)
 
 	stat->cpu = cpu;
 	per_cpu(cpufreq_stats_table, cpu) = stat;
-
-	cpufreq_for_each_valid_entry(pos, table)
-		count++;
 
 	alloc_size = count * sizeof(int) + count * sizeof(u64);
 
@@ -349,23 +472,6 @@ error_out:
 	return ret;
 }
 
-static void cpufreq_stats_create_table(unsigned int cpu)
-{
-	struct cpufreq_policy *policy;
-
-	/*
-	 * "likely(!policy)" because normally cpufreq_stats will be registered
-	 * before cpufreq driver
-	 */
-	policy = cpufreq_cpu_get(cpu);
-	if (likely(!policy))
-		return;
-
-	__cpufreq_stats_create_table(policy);
-
-	cpufreq_cpu_put(policy);
-}
-
 static void cpufreq_stats_update_policy_cpu(struct cpufreq_policy *policy)
 {
 	struct cpufreq_stats *stat = per_cpu(cpufreq_stats_table,
@@ -377,6 +483,51 @@ static void cpufreq_stats_update_policy_cpu(struct cpufreq_policy *policy)
 			policy->last_cpu);
 	per_cpu(cpufreq_stats_table, policy->last_cpu) = NULL;
 	stat->cpu = policy->cpu;
+}
+
+static void cpufreq_powerstats_create(unsigned int cpu,
+		struct cpufreq_frequency_table *table, int count) {
+	unsigned int alloc_size, i = 0, ret = 0;
+	struct cpufreq_power_stats *powerstats;
+	struct cpufreq_frequency_table *pos;
+	struct device_node *cpu_node;
+	char device_path[16];
+
+	powerstats = kzalloc(sizeof(struct cpufreq_power_stats),
+			GFP_KERNEL);
+	if (!powerstats)
+		return;
+
+	/* Allocate memory for freq table per cpu as well as clockticks per
+	 * freq*/
+	alloc_size = count * sizeof(unsigned int) +
+		count * sizeof(unsigned int);
+	powerstats->curr = kzalloc(alloc_size, GFP_KERNEL);
+	if (!powerstats->curr) {
+		kfree(powerstats);
+		return;
+	}
+	powerstats->freq_table = powerstats->curr + count;
+
+	spin_lock(&cpufreq_stats_lock);
+	i = 0;
+	cpufreq_for_each_valid_entry(pos, table)
+		powerstats->freq_table[i++] = pos->frequency;
+	powerstats->state_num = i;
+
+	snprintf(device_path, sizeof(device_path), "/cpus/cpu@%d", cpu);
+	cpu_node = of_find_node_by_path(device_path);
+	if (cpu_node) {
+		ret = of_property_read_u32_array(cpu_node, "current",
+				powerstats->curr, count);
+		if (ret) {
+			kfree(powerstats->curr);
+			kfree(powerstats);
+			powerstats = NULL;
+		}
+	}
+	per_cpu(cpufreq_power_stats, cpu) = powerstats;
+	spin_unlock(&cpufreq_stats_lock);
 }
 
 static int compare_for_sort(const void *lhs_ptr, const void *rhs_ptr)
@@ -420,26 +571,27 @@ static void add_all_freq_table(unsigned int freq)
 		all_freq_table->freq_table = NULL;
 		return;
 	}
+#ifdef CONFIG_LOAD_BASED_CORE_CURRENT_CAL
+	size = sizeof(unsigned long long) * (all_freq_table->table_size + 1);
+	all_freq_table->time_for_clust0 = krealloc(all_freq_table->time_for_clust0,
+			size, GFP_ATOMIC);
+	if (IS_ERR(all_freq_table->time_for_clust0)) {
+		pr_warn("Could not reallocate memory for freq_table time_for_clust0\n");
+		all_freq_table->time_for_clust0 = NULL;
+		return;
+	}
+	all_freq_table->time_for_clust0[all_freq_table->table_size] = 0ULL;
+#endif
 	all_freq_table->freq_table[all_freq_table->table_size++] = freq;
 }
 
-static void cpufreq_allstats_create(unsigned int cpu)
+static void cpufreq_allstats_create(unsigned int cpu,
+		struct cpufreq_frequency_table *table, int count)
 {
 	int i , j = 0;
-	unsigned int alloc_size, count = 0;
-	struct cpufreq_frequency_table *table = cpufreq_frequency_get_table(cpu);
+	unsigned int alloc_size;
 	struct all_cpufreq_stats *all_stat;
 	bool sort_needed = false;
-
-	if (!table)
-		return;
-
-	for (i = 0; table[i].frequency != CPUFREQ_TABLE_END; i++) {
-		unsigned int freq = table[i].frequency;
-		if (freq == CPUFREQ_ENTRY_INVALID)
-			continue;
-		count++;
-	}
 
 	all_stat = kzalloc(sizeof(struct all_cpufreq_stats),
 			GFP_KERNEL);
@@ -479,22 +631,65 @@ static void cpufreq_allstats_create(unsigned int cpu)
 	spin_unlock(&cpufreq_stats_lock);
 }
 
+static void cpufreq_stats_create_table(unsigned int cpu)
+{
+	struct cpufreq_policy *policy;
+	struct cpufreq_frequency_table *table, *pos;
+	int count = 0;
+	/*
+	 * "likely(!policy)" because normally cpufreq_stats will be registered
+	 * before cpufreq driver
+	 */
+	policy = cpufreq_cpu_get(cpu);
+	if (likely(!policy))
+		return;
+
+	table = cpufreq_frequency_get_table(policy->cpu);
+	if (likely(table)) {
+		cpufreq_for_each_valid_entry(pos, table)
+			count++;
+
+		if (!per_cpu(all_cpufreq_stats, cpu))
+			cpufreq_allstats_create(cpu, table, count);
+
+		if (!per_cpu(cpufreq_power_stats, cpu))
+			cpufreq_powerstats_create(cpu, table, count);
+
+		__cpufreq_stats_create_table(policy, table, count);
+	}
+	cpufreq_cpu_put(policy);
+}
+
 static int cpufreq_stat_notifier_policy(struct notifier_block *nb,
 		unsigned long val, void *data)
 {
-	int ret = 0;
+	int ret = 0, count = 0;
 	struct cpufreq_policy *policy = data;
+	struct cpufreq_frequency_table *table, *pos;
+	unsigned int cpu_num, cpu = policy->cpu;
 
 	if (val == CPUFREQ_UPDATE_POLICY_CPU) {
 		cpufreq_stats_update_policy_cpu(policy);
 		return 0;
 	}
 
-	if (!per_cpu(all_cpufreq_stats, policy->cpu))
-		cpufreq_allstats_create(policy->cpu);
+	table = cpufreq_frequency_get_table(cpu);
+	if (!table)
+		return 0;
+
+	cpufreq_for_each_valid_entry(pos, table)
+		count++;
+
+	if (!per_cpu(all_cpufreq_stats, cpu))
+		cpufreq_allstats_create(cpu, table, count);
+
+	for_each_possible_cpu(cpu_num) {
+		if (!per_cpu(cpufreq_power_stats, cpu_num))
+			cpufreq_powerstats_create(cpu_num, table, count);
+	}
 
 	if (val == CPUFREQ_CREATE_POLICY)
-		ret = __cpufreq_stats_create_table(policy);
+		ret = __cpufreq_stats_create_table(policy, table, count);
 	else if (val == CPUFREQ_REMOVE_POLICY)
 		__cpufreq_stats_free_table(policy);
 
@@ -574,8 +769,19 @@ static int __init cpufreq_stats_init(void)
 	ret = sysfs_create_file(cpufreq_global_kobject,
 			&_attr_all_time_in_state.attr);
 	if (ret)
-		pr_warn("Error creating sysfs file for cpufreq stats\n");
+		pr_warn("Cannot create sysfs file for cpufreq stats\n");
 
+	ret = sysfs_create_file(cpufreq_global_kobject,
+			&_attr_current_in_state.attr);
+	if (ret)
+		pr_warn("Cannot create sysfs file for cpufreq current stats\n");
+
+#ifdef CONFIG_LOAD_BASED_CORE_CURRENT_CAL
+	ret = sysfs_create_file(cpufreq_global_kobject,
+		&_attr_cpu_time_for_clust0.attr);
+	if (ret)
+		pr_warn("Error creating sysfs file for time_for_clust0\n");
+#endif
 	return 0;
 }
 static void __exit cpufreq_stats_exit(void)
@@ -589,6 +795,7 @@ static void __exit cpufreq_stats_exit(void)
 	for_each_online_cpu(cpu)
 		cpufreq_stats_free_table(cpu);
 	cpufreq_allstats_free();
+	cpufreq_powerstats_free();
 	cpufreq_put_global_kobject();
 }
 

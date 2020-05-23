@@ -181,6 +181,10 @@ int sensor_sr544_cis_init(struct v4l2_subdev *subdev)
 	struct fimc_is_cis *cis;
 	u32 setfile_index = 0;
 	cis_setting_info setinfo;
+#ifdef USE_CAMERA_HW_BIG_DATA
+	struct cam_hw_param *hw_param = NULL;
+	struct fimc_is_device_sensor_peri *sensor_peri = NULL;
+#endif
 
 #ifdef DEBUG_SENSOR_TIME
 	struct timeval st, end;
@@ -201,11 +205,22 @@ int sensor_sr544_cis_init(struct v4l2_subdev *subdev)
 
 	BUG_ON(!cis->cis_data);
 	memset(cis->cis_data, 0, sizeof(cis_shared_data));
+	cis->rev_flag = false;
 
 	ret = sensor_cis_check_rev(cis);
 	if (ret < 0) {
-		err("sensor_sr544_check_rev is fail");
-		goto p_err;
+#ifdef USE_CAMERA_HW_BIG_DATA
+		sensor_peri = container_of(cis, struct fimc_is_device_sensor_peri, cis);
+		if (sensor_peri && sensor_peri->module->position == SENSOR_POSITION_REAR)
+			fimc_is_sec_get_rear_hw_param(&hw_param);
+		else if (sensor_peri && sensor_peri->module->position == SENSOR_POSITION_FRONT)
+			fimc_is_sec_get_front_hw_param(&hw_param);
+		if (hw_param)
+			hw_param->i2c_sensor_err_cnt++;
+#endif
+		warn("sensor_sr544_check_rev is fail when cis init");
+		cis->rev_flag = true;
+		ret = 0;
 	}
 
 	cis->cis_data->cur_width = SENSOR_SR544_MAX_WIDTH;
@@ -1775,6 +1790,7 @@ MODULE_DEVICE_TABLE(of, exynos_fimc_is_cis_sr544_match);
 
 static const struct i2c_device_id cis_sr544_idt[] = {
 	{ SENSOR_NAME, 0 },
+	{},
 };
 
 static struct i2c_driver cis_sr544_driver = {

@@ -842,6 +842,15 @@ static int sec_chg_set_property(struct power_supply *psy,
 						__func__, charger->charging_current);
 				sm5703_set_fast_charging_current(charger, charger->charging_current);
 			}
+
+			if (sec_bat_get_slate_mode() == ENABLE) {
+				sm5703_assign_bits(charger->i2c,
+					SM5703_CNTL, SM5703_OPERATION_MODE_MASK,
+					SM5703_OPERATION_MODE_SUSPEND);
+				pr_info("%s: SM5703 OPERATION MODE SUSPEND\n",__func__);
+			} else {
+				sm5703_enable_charger_switch(charger, charger->is_charging);
+			}
 #if EN_TEST_READ
 			sm5703_test_read(charger->i2c);
 #endif
@@ -876,6 +885,15 @@ static int sec_chg_set_property(struct power_supply *psy,
 			}
 			/*sm5702_set_buck(charger, buck_state);*/
 			sm5703_enable_charger_switch(charger, charger->is_charging);
+
+			if (sec_bat_get_slate_mode() == ENABLE) {
+				sm5703_assign_bits(charger->i2c,
+					SM5703_CNTL, SM5703_OPERATION_MODE_MASK,
+					SM5703_OPERATION_MODE_SUSPEND);
+				pr_info("%s: SM5703 OPERATION MODE SUSPEND\n",__func__);
+			} else {
+				sm5703_enable_charger_switch(charger, charger->is_charging);
+			}
 			break;
 		case POWER_SUPPLY_PROP_ENERGY_NOW:
 			/* charger off when jig detected */

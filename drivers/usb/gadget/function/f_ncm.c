@@ -1111,6 +1111,7 @@ static struct sk_buff *ncm_wrap_ntb(struct gether *port,
 	ncb_len += pad;
 
 	if (ncb_len + skb->len + crc_len > max_size) {
+		printk(KERN_ERR"usb: %s Dropped skb skblen (%d) \n",__func__,skb->len);
 		dev_kfree_skb_any(skb);
 		return NULL;
 	}
@@ -1122,7 +1123,7 @@ static struct sk_buff *ncm_wrap_ntb(struct gether *port,
 	dev_kfree_skb_any(skb);
 #ifdef CONFIG_USB_NCM_SUPPORT_MTU_CHANGE
 	if (!skb2) {
-		printk(KERN_ERR"Dropped skb \n");
+		printk(KERN_ERR"usb: %s Dropped skb skblen realloc failed (%d) \n",__func__,skb->len);
 		return NULL;
 	}
 #else
@@ -1315,6 +1316,7 @@ static int ncm_unwrap_ntb(struct gether *port,
 	     "Parsed NTB with %d frames\n", dgram_counter);
 	return 0;
 err:
+	printk(KERN_DEBUG"usb:%s Dropped %d \n",__func__,skb->len);
 	skb_queue_purge(list);
 	dev_kfree_skb_any(skb);
 	return ret;
@@ -1583,3 +1585,4 @@ int ncm_bind_config(struct usb_configuration *c, u8 ethaddr[ETH_ALEN],
 		kfree(ncm);
 	return status;
 }
+

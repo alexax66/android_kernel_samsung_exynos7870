@@ -51,6 +51,7 @@
 #include "isdbt_tuner_pdata.h"
 
 struct ISDBT_INIT_INFO_T *hInit;
+static struct wake_lock isdbt_wlock;
 
 int bbm_xtal_freq;
 unsigned int fc8300_xtal_freq;
@@ -363,6 +364,8 @@ int isdbt_open(struct inode *inode, struct file *filp)
 
 	filp->private_data = hOpen;
 
+	wake_lock(&isdbt_wlock);
+
 	return 0;
 }
 
@@ -424,6 +427,8 @@ int isdbt_release(struct inode *inode, struct file *filp)
 
 	if (isdbt_pdata->regulator_is_enable)
 		isdbt_regulator_onoff(ISDBT_LDO_OFF);
+
+	wake_unlock(&isdbt_wlock);
 
 	return 0;
 }
@@ -860,6 +865,7 @@ static int isdbt_probe(struct platform_device *pdev)
 	}
 #ifdef CONFIG_ISDBT_GPIO_CLK
 	res = isdbt_pinctrl(&pdev->dev, isdbt_pdata);
+	pinctrl_select_state(isdbt_pdata->isdbt_pinctrl, isdbt_pdata->isdbt_off);
 #endif
 	isdbt_gpio_init();
 	fc8300_xtal_freq = bbm_xtal_freq;
@@ -903,12 +909,14 @@ static int isdbt_probe(struct platform_device *pdev)
 		if (res)
 		pr_err("%s : failed to create device file in sysfs entries!\n", __func__);
 	}
+	wake_lock_init(&isdbt_wlock, WAKE_LOCK_SUSPEND, "isdbt_wlock");
 
 	return 0;
 }
 static int isdbt_remove(struct platform_device *pdev)
 {
 	pr_err("ISDBT remove\n");
+	wake_lock_destroy(&isdbt_wlock);
 	return 0;
 }
 

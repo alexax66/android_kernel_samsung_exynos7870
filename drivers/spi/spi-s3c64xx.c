@@ -1139,6 +1139,10 @@ static int s3c64xx_spi_setup(struct spi_device *spi)
 	if (sdd->port_id == CONFIG_SENSORS_FP_SPI_NUMBER)
 		return 0;
 #endif
+#ifdef CONFIG_ESE_SECURE
+	if (sdd->port_id == CONFIG_ESE_SECURE_SPI_PORT)
+		return 0;
+#endif
 
 	if (!spi_get_ctldata(spi)) {
 		if(cs->line != 0) {
@@ -1309,6 +1313,10 @@ static void s3c64xx_spi_hwinit(struct s3c64xx_spi_driver_data *sdd, int channel)
 
 #ifdef ENABLE_SENSORS_FPRINT_SECURE
 	if (channel == CONFIG_SENSORS_FP_SPI_NUMBER)
+		return;
+#endif
+#ifdef CONFIG_ESE_SECURE
+	if (channel == CONFIG_ESE_SECURE_SPI_PORT)
 		return;
 #endif
 
@@ -1655,16 +1663,18 @@ static int s3c64xx_spi_probe(struct platform_device *pdev)
 		goto err3;
 	}
 
+	if (1
 #ifdef ENABLE_SENSORS_FPRINT_SECURE
-	if (sdd->port_id != CONFIG_SENSORS_FP_SPI_NUMBER)
-		writel(S3C64XX_SPI_INT_RX_OVERRUN_EN | S3C64XX_SPI_INT_RX_UNDERRUN_EN |
-			S3C64XX_SPI_INT_TX_OVERRUN_EN | S3C64XX_SPI_INT_TX_UNDERRUN_EN,
-			sdd->regs + S3C64XX_SPI_INT_EN);
-#else
-	writel(S3C64XX_SPI_INT_RX_OVERRUN_EN | S3C64XX_SPI_INT_RX_UNDERRUN_EN |
-			S3C64XX_SPI_INT_TX_OVERRUN_EN | S3C64XX_SPI_INT_TX_UNDERRUN_EN,
-			sdd->regs + S3C64XX_SPI_INT_EN);
+			&& sdd->port_id != CONFIG_SENSORS_FP_SPI_NUMBER
 #endif
+#ifdef CONFIG_ESE_SECURE
+			&& sdd->port_id != CONFIG_ESE_SECURE_SPI_PORT
+#endif
+	   ){
+		writel(S3C64XX_SPI_INT_RX_OVERRUN_EN | S3C64XX_SPI_INT_RX_UNDERRUN_EN |
+				S3C64XX_SPI_INT_TX_OVERRUN_EN | S3C64XX_SPI_INT_TX_UNDERRUN_EN,
+				sdd->regs + S3C64XX_SPI_INT_EN);
+	}
 
 #ifdef CONFIG_PM_RUNTIME
 	pm_runtime_mark_last_busy(&pdev->dev);

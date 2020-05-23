@@ -1625,7 +1625,7 @@ static int cm36655_i2c_probe(struct i2c_client *client,
 	INIT_WORK(&cm36655->work_light, cm36655_work_func_light);
 
 	/* set sysfs for proximity sensor */
-	ret = sensors_register(cm36655->prox_dev,
+	ret = sensors_register(&cm36655->prox_dev,
 		cm36655, prox_sensor_attrs, "proximity_sensor");
 	if (ret) {
 		SENSOR_ERR("cann't register prox sensor device(%d)\n", ret);
@@ -1633,7 +1633,7 @@ static int cm36655_i2c_probe(struct i2c_client *client,
 	}
 
 	/* set sysfs for light sensor */
-	ret = sensors_register(cm36655->light_dev,
+	ret = sensors_register(&cm36655->light_dev,
 		cm36655, light_sensor_attrs, "light_sensor");
 	if (ret) {
 		SENSOR_ERR("cann't register light sensor device(%d)\n", ret);

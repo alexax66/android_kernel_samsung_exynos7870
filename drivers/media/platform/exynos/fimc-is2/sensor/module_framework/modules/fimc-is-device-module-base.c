@@ -24,6 +24,7 @@
 #include <linux/moduleparam.h>
 #include <linux/platform_device.h>
 #include <linux/of_gpio.h>
+#include <asm/neon.h>
 #include <media/v4l2-ctrls.h>
 #include <media/v4l2-device.h>
 #include <media/v4l2-subdev.h>
@@ -86,8 +87,13 @@ int sensor_module_init(struct v4l2_subdev *subdev, u32 val)
 		err("fimc_is_resource_get is fail");
 		goto p_err;
 	}
-
+#ifdef ENABLE_FPSIMD_FOR_USER
+	fpsimd_get();
 	ret = register_sensor_itf((void *)&sensor_peri->sensor_interface);
+	fpsimd_put();
+#else
+	ret = register_sensor_itf((void *)&sensor_peri->sensor_interface);
+#endif
 	if (ret < 0) {
 		goto p_err;
 	}
@@ -104,6 +110,15 @@ int sensor_module_init(struct v4l2_subdev *subdev, u32 val)
 		err("v4l2_subdev_call(init) is fail(%d)", ret);
 		goto p_err;
 	}
+
+#ifdef USE_FACE_UNLOCK_AE_AWB_INIT
+	/* set initial ae setting if initial_ae feature is supported */
+	ret = CALL_CISOPS(&sensor_peri->cis, cis_set_initial_exposure, subdev_cis);
+	if (ret) {
+		err("v4l2_subdev_call(set_initial_exposure) is fail(%d)", ret);
+		goto p_err;
+	}
+#endif
 
 	subdev_flash = sensor_peri->subdev_flash;
 	if (subdev_flash != NULL) {

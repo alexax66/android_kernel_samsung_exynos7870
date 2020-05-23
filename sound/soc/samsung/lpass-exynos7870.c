@@ -26,11 +26,36 @@
 #include <sound/exynos.h>
 #include <sound/exynos-audmixer.h>
 
+#include "lpass.h"
+
 #ifdef CONFIG_SND_SOC_SAMSUNG_VERBOSE_DEBUG
 #ifdef dev_dbg
 #undef dev_dbg
 #endif
 #define dev_dbg dev_err
+#endif
+
+#ifdef USE_EXYNOS_AUD_SCHED
+#define AUD_TASK_CPU_UHQ	(5)
+#ifdef CONFIG_SOC_EXYNOS5422
+#define USE_AUD_TASK_RT
+#endif
+#endif
+
+#ifdef CONFIG_PM_DEVFREQ
+#define USE_AUD_DEVFREQ
+#define AUD_CPU_FREQ_UHQA	(0)
+#define AUD_KFC_FREQ_UHQA	(1352000)
+#define AUD_MIF_FREQ_UHQA	(0)
+#define AUD_INT_FREQ_UHQA	(0)
+#define AUD_CPU_FREQ_HIGH	(0)
+#define AUD_KFC_FREQ_HIGH	(0)
+#define AUD_MIF_FREQ_HIGH	(0)
+#define AUD_INT_FREQ_HIGH	(0)
+#define AUD_CPU_FREQ_NORM	(0)
+#define AUD_KFC_FREQ_NORM	(0)
+#define AUD_MIF_FREQ_NORM	(0)
+#define AUD_INT_FREQ_NORM	(0)
 #endif
 
 #define AUD_PLL_FREQ			(98304000U)
@@ -44,6 +69,10 @@
 #define DISPAUD_CFG_AMP_SWRST_BIT		2
 #define DISPAUD_CFG_MI2S_SWRST_BIT		1
 #define DISPAUD_CFG_MIXER_SWRST_BIT		0
+
+#define EXYNOS7880_AUD_PATH_CFG			0x0080
+
+#define AUD_PATH_CFG_BT_MUX_CON_MASK		0x2
 
 #define EXYNOS_GPIO_MODE_AUD_SYS_PWR_REG_OFFSET	0x1340
 #define EXYNOS_PAD_RETENTION_AUD_OPTION_OFFSET	0x3028
@@ -67,20 +96,7 @@ enum {
 	LPASS_VER_MAX
 };
 
-static struct lpass_info {
-	spinlock_t		lock;
-	bool			valid;
-	bool			enabled;
-	struct platform_device	*pdev;
-	void __iomem		*regs;
-	struct proc_dir_entry	*proc_file;
-	atomic_t		use_cnt;
-	atomic_t		stream_cnt;
-	struct regmap		*pmureg;
-	bool			display_on;
-	bool			uhqa_on;
-	int			idle_ip_index;
-} lpass;
+struct lpass_info lpass;
 
 struct aud_reg {
 	void __iomem		*reg;
@@ -100,7 +116,7 @@ static LIST_HEAD(reg_list);
 static LIST_HEAD(subip_list);
 static void lpass_update_qos(void);
 
-static void lpass_enable_pll(bool on)
+void lpass_enable_pll(bool on)
 {
 	if (on) {
 		clk_prepare_enable(lpass_cmu.clk_dispaud_decon);
@@ -175,17 +191,17 @@ static int lpass_set_clk_hierarchy(struct device *dev)
  * the underlying PLL as the parent of this MUX and disabling sets the
  * oscillator clock as the parent of this clock.
  */
-static void lpass_set_mux_pll(void)
+void lpass_set_mux_pll(void)
 {
 	/* Already taken care in lpass_enable_pll() */
 }
 
-static void lpass_set_mux_osc(void)
+void lpass_set_mux_osc(void)
 {
 	/* Already taken care in lpass_enable_pll() */
 }
 
-static void lpass_retention_pad_reg(void)
+void lpass_retention_pad_reg(void)
 {
 	regmap_update_bits(lpass.pmureg,
 			EXYNOS_GPIO_MODE_AUD_SYS_PWR_REG_OFFSET,
@@ -360,6 +376,41 @@ void lpass_put_sync(struct device *ip_dev)
 	lpass_update_qos();
 }
 
+#ifdef USE_EXYNOS_AUD_SCHED
+void lpass_set_sched(pid_t pid, int mode)
+{
+#ifdef USE_AUD_TASK_RT
+	struct sched_param param_fifo = {.sched_priority = MAX_RT_PRIO >> 1};
+	struct task_struct *task = find_task_by_vpid(pid);
+#endif
+
+	switch (mode) {
+	case AUD_MODE_UHQA:
+		lpass.uhqa_on = true;
+		break;
+	case AUD_MODE_NORM:
+		lpass.uhqa_on = false;
+		break;
+	default:
+		break;
+	}
+
+	lpass_update_qos();
+
+#ifdef USE_AUD_TASK_RT
+	if (task) {
+		sched_setscheduler_nocheck(task,
+				SCHED_RR | SCHED_RESET_ON_FORK, &param_fifo);
+		pr_info("%s: [%s] pid = %d, prio = %d\n",
+				__func__, task->comm, pid, task->prio);
+	} else {
+		pr_err("%s: task not found (pid = %d)\n",
+				__func__, pid);
+	}
+#endif
+}
+#endif
+
 void lpass_add_stream(void)
 {
 	atomic_inc(&lpass.stream_cnt);
@@ -370,6 +421,14 @@ void lpass_remove_stream(void)
 {
 	atomic_dec(&lpass.stream_cnt);
 	lpass_update_qos();
+}
+
+void lpass_set_fm_bt_mux(int is_fm)
+{
+	regmap_update_bits(lpass.pmureg,
+			EXYNOS7880_AUD_PATH_CFG,
+			AUD_PATH_CFG_BT_MUX_CON_MASK,
+			is_fm ? AUD_PATH_CFG_BT_MUX_CON_MASK : 0);
 }
 
 static void lpass_reg_save(void)
@@ -583,6 +642,55 @@ static int lpass_resume(struct device *dev)
 
 static void lpass_update_qos(void)
 {
+#ifdef USE_AUD_DEVFREQ
+	int cpu_qos_new, kfc_qos_new, mif_qos_new, int_qos_new;
+
+	if (!lpass.enabled) {
+		cpu_qos_new = 0;
+		kfc_qos_new = 0;
+		mif_qos_new = 0;
+		int_qos_new = 0;
+	} else if (lpass.uhqa_on) {
+		cpu_qos_new = AUD_CPU_FREQ_UHQA;
+		kfc_qos_new = AUD_KFC_FREQ_UHQA;
+		mif_qos_new = AUD_MIF_FREQ_UHQA;
+		int_qos_new = AUD_INT_FREQ_UHQA;
+	} else if (atomic_read(&lpass.stream_cnt) > 1) {
+		cpu_qos_new = AUD_CPU_FREQ_HIGH;
+		kfc_qos_new = AUD_KFC_FREQ_HIGH;
+		mif_qos_new = AUD_MIF_FREQ_HIGH;
+		int_qos_new = AUD_INT_FREQ_HIGH;
+	} else {
+		cpu_qos_new = AUD_CPU_FREQ_NORM;
+		kfc_qos_new = AUD_KFC_FREQ_NORM;
+		mif_qos_new = AUD_MIF_FREQ_NORM;
+		int_qos_new = AUD_INT_FREQ_NORM;
+	}
+
+	if (lpass.cpu_qos != cpu_qos_new) {
+		lpass.cpu_qos = cpu_qos_new;
+		pm_qos_update_request(&lpass.aud_cluster1_qos, lpass.cpu_qos);
+		pr_debug("%s: cpu_qos = %d\n", __func__, lpass.cpu_qos);
+	}
+
+	if (lpass.kfc_qos != kfc_qos_new) {
+		lpass.kfc_qos = kfc_qos_new;
+		pm_qos_update_request(&lpass.aud_cluster0_qos, lpass.kfc_qos);
+		pr_debug("%s: kfc_qos = %d\n", __func__, lpass.kfc_qos);
+	}
+
+	if (lpass.mif_qos != mif_qos_new) {
+		lpass.mif_qos = mif_qos_new;
+		pm_qos_update_request(&lpass.aud_mif_qos, lpass.mif_qos);
+		pr_debug("%s: mif_qos = %d\n", __func__, lpass.mif_qos);
+	}
+
+	if (lpass.int_qos != int_qos_new) {
+		lpass.int_qos = int_qos_new;
+		pm_qos_update_request(&lpass.aud_int_qos, lpass.int_qos);
+		pr_debug("%s: int_qos = %d\n", __func__, lpass.int_qos);
+	}
+#endif
 }
 
 static char banner[] = KERN_INFO "Samsung Audio Subsystem driver\n";
@@ -648,6 +756,17 @@ static int lpass_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "syscon regmap lookup failed.\n");
 		return PTR_ERR(lpass.pmureg);
 	}
+
+#ifdef USE_AUD_DEVFREQ
+	lpass.cpu_qos = 0;
+	lpass.kfc_qos = 0;
+	lpass.mif_qos = 0;
+	lpass.int_qos = 0;
+	pm_qos_add_request(&lpass.aud_cluster1_qos, PM_QOS_CLUSTER1_FREQ_MIN, 0);
+	pm_qos_add_request(&lpass.aud_cluster0_qos, PM_QOS_CLUSTER0_FREQ_MIN, 0);
+	pm_qos_add_request(&lpass.aud_mif_qos, PM_QOS_BUS_THROUGHPUT, 0);
+	pm_qos_add_request(&lpass.aud_int_qos, PM_QOS_DEVICE_THROUGHPUT, 0);
+#endif
 	dev_dbg(dev, "%s Completed\n", __func__);
 	return 0;
 }

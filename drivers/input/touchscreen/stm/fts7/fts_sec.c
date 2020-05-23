@@ -429,8 +429,14 @@ static ssize_t store_cmd(struct device *dev, struct device_attribute *devattr,
 		return -EINVAL;
 	}
 
-	if (count > CMD_STR_LEN) {
-		printk(KERN_ERR "%s: overflow command length\n",
+	if (strlen(buf) >= CMD_STR_LEN) {
+		printk(KERN_ERR "%s: overflow command length(strlen(buf))\n",
+				__func__);
+		return -EINVAL;
+	}
+
+	if (count >= (unsigned int)CMD_STR_LEN) {
+		printk(KERN_ERR "%s: overflow command length(count)\n",
 				__func__);
 		return -EINVAL;
 	}
@@ -1504,7 +1510,7 @@ static void run_rawcap_read(void *device_data)
 	info->o_afe_ver = info->afe_ver;
 #endif
 
-	fts_execute_autotune(info);
+//	fts_execute_autotune(info);
 #ifdef FTS_SUPPORT_PARTIAL_DOWNLOAD
 	//STMicro Auto-tune protection disable
 	fts_write_reg(info, regAdd, 4);
@@ -2891,15 +2897,15 @@ static void run_cx_data_read(void *device_data)
 				if((strncmp(info->board->project_name, "matisse", 7) == 0)) {
 					int TEMP_COMP = 0;
 					if ((i > 10) && (j == 0))
-						TEMP_COMP = 3;
-					else if ((i > 10) && (j <= 7))
 						TEMP_COMP = 2;
-					else if ((i <= 10) && (j >= 25))
+					else if ((i > 10) && (j <= 5))
+						TEMP_COMP = 1;
+					else if ((i <= 10) && (j == 27))
 					{
-						if ((i == 9) && (j == 27))
+						if (i == 9)
 							TEMP_COMP = 4;
-						else if ((i == 10) && (j == 27))
-							TEMP_COMP = 8;
+						else if (i == 10)
+							TEMP_COMP = 7;
 						else
 							TEMP_COMP = 2;
 					}

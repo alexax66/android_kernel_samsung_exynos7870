@@ -13,9 +13,15 @@
 #
 
 
+config DDK_VERSION_OS
+	string "version"
+	default ANDROID_MAJOR_VERSION
+	help
+	  Android OS major version
+
 menuconfig MALI_T83X
 	tristate "Mali-T83X support"
-	default n
+	default y
 	help
 	  Enable this option to build support for the ARM Mali-T83X GPU.
 	  To compile this driver as a module, choose M here:
@@ -24,18 +30,51 @@ menuconfig MALI_T83X
 choice
 	prompt "version Configuration"
 	depends on MALI_T83X
-	default MALI_R7P0_T83X
+	default MALI_R12P0 if DDK_VERSION_OS = "m"
+	default MALI_R15P0 if DDK_VERSION_OS = "n"
+	default MALI_R22P0 if DDK_VERSION_OS = "o"
+	default MALI_R28P0 if DDK_VERSION_OS = "p"
+	
 	help
 	  Select the gpu support version.
 
-config MALI_R7P0_T83X
+config MALI_R12P0
 	depends on MALI_T83X
-	bool "r7p0 driver"
+	bool "r12p0 driver"
 
-if MALI_R7P0_T83X
-source "drivers/gpu/arm/t83x/r7p0/Kconfig"
-endif
+config MALI_R15P0
+	depends on MALI_T83X
+	bool "r15p0 driver"
 
+config MALI_R21P0
+	depends on MALI_T83X
+	bool "r21p0 driver"
+
+config MALI_R22P0
+	depends on MALI_T83X
+	bool "r22p0 driver"
+
+config MALI_R28P0
+	depends on MALI_T83X
+	bool "r28p0 driver"
 endchoice
 
+if MALI_R12P0
+source "drivers/gpu/arm/t83x/r12p0/Kconfig"
+endif
 
+if MALI_R15P0
+source "drivers/gpu/arm/t83x/r15p0/Kconfig"
+endif
+
+if MALI_R21P0
+source "drivers/gpu/arm/t83x/r21p0/Kconfig"
+endif
+
+if MALI_R22P0
+source "drivers/gpu/arm/t83x/r22p0/Kconfig"
+endif
+
+if MALI_R28P0
+source "drivers/gpu/arm/t83x/r28p0/Kconfig"
+endif

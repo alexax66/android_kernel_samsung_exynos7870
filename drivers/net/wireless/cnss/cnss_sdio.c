@@ -126,6 +126,12 @@ struct cnss_wlan_vreg_info {
 	bool state;
 };
 
+struct cnss_oob_ts {
+	uint64_t timestamp_start;
+	uint64_t timestamp_end;
+	uint8_t oob_state;
+};
+
 static struct cnss_sdio_data {
 	struct platform_device *pldev;
 	struct cnss_wlan_vreg_info vreg_info;
@@ -144,7 +150,8 @@ static struct cnss_sdio_data {
 	int oob_shutdown;                          /* stop the oob task */
 	int force_hung;
 	struct completion oob_completion;          /* oob thread completion */
-    CNSS_BOARDDATA board_data;
+	CNSS_BOARDDATA board_data;
+	struct cnss_oob_ts oob_ts;
 } *penv;
 
 
@@ -396,23 +403,34 @@ int cnss_wlan_get_pending_irq(void)
 }
 EXPORT_SYMBOL(cnss_wlan_get_pending_irq);
 
-
 int cnss_wlan_query_oob_status(void)
 {
 	return 0;
 }
 EXPORT_SYMBOL(cnss_wlan_query_oob_status);
 
+uint64_t cnss_get_timestamp(void)
+{
+	int cpu = raw_smp_processor_id();
+
+	return cpu_clock(cpu);
+}
+
 /* thread to handle all the oob interrupts */
 #define CNSS_OOB_MAX_IRQ_PENDING_COUNT 100
-#define CNSS_OOB_PANIC_IRQ_PENDING_COUNT 50000
-#define CNSS_SDIO_OOB_STATS 1
+#define CNSS_OOB_PANIC_IRQ_PENDING_COUNT 500000
+//#define CNSS_SDIO_OOB_STATS 1
+/* refer to athdefs.h */
+#define CNSS_MAX_ERR      3
+#define CNSS_FAKE_STATUS  31
+#define CNSS_STATUS_COUNT 33
+#define CNSS_FORCE_POLL_COUNT 10
 unsigned long oob_loop_count = 0, irq_pending_count = 0, irq_statistics[CNSS_OOB_MAX_IRQ_PENDING_COUNT+1] = {0};
-
+unsigned long irq_handle_status[CNSS_STATUS_COUNT] = {0};
 static int oob_task(void *pm_oob)
 {
 	struct sched_param param = { .sched_priority = 1 };
-	int status;
+	int status, err_cnt;
 
 	init_completion(&penv->oob_completion);
 	sched_setscheduler(current, SCHED_FIFO, &param);
@@ -420,29 +438,40 @@ static int oob_task(void *pm_oob)
 	while (!penv->oob_shutdown) {
 		oob_loop_count++;
 		irq_pending_count = 0;
+		err_cnt = 0;
 		if (down_interruptible(&penv->sem_oob) != 0)
 			continue;
+
+		penv->oob_ts.timestamp_start = cnss_get_timestamp();
+		penv->oob_ts.oob_state = cnss_wlan_get_pending_irq();
 		if (penv->cnss_wlan_oob_pm && penv->cnss_wlan_oob_irq_handler) {
 			while (!cnss_wlan_get_pending_irq() && !penv->oob_shutdown) {
-				status = penv->cnss_wlan_oob_irq_handler(penv->cnss_wlan_oob_pm);
-				if (status)
-					break;
 				irq_pending_count++;
 				if (irq_pending_count > CNSS_OOB_PANIC_IRQ_PENDING_COUNT && oob_loop_count != 1)
-					panic("%s: irq pending count %lu\n", __func__, irq_pending_count); 
+					panic("%s: irq pending count %lu\n", __func__, irq_pending_count);
+
+				status = penv->cnss_wlan_oob_irq_handler(penv->cnss_wlan_oob_pm);
+				if (status) {
+					(status < 0) ? irq_handle_status[0]++ :
+						((status < CNSS_STATUS_COUNT) ?
+						 irq_handle_status[status]++ :
+						 irq_handle_status[CNSS_STATUS_COUNT-1]++);
+					break;
+				}
 			}
-			if (irq_pending_count < CNSS_OOB_MAX_IRQ_PENDING_COUNT)
-				irq_statistics[irq_pending_count]++;
-			else if (irq_pending_count < CNSS_OOB_PANIC_IRQ_PENDING_COUNT) {
-				pr_err("%s %lu\n", __func__, irq_pending_count);
-				irq_statistics[100]++;
-			} 
+			if (irq_pending_count) {
+				if (irq_pending_count < CNSS_OOB_MAX_IRQ_PENDING_COUNT)
+					irq_statistics[irq_pending_count]++;
+				else
+					irq_statistics[CNSS_OOB_MAX_IRQ_PENDING_COUNT]++;
+			} else
+				irq_statistics[0]++;
 #ifdef CNSS_SDIO_OOB_STATS
-			if (oob_loop_count % 5000 == 0) {
+			if (oob_loop_count % 10000 == 0) {
 				int count;
-				for (count = 0; count < CNSS_OOB_MAX_IRQ_PENDING_COUNT+1; count++) {
+				for (count = 0; count <= CNSS_OOB_MAX_IRQ_PENDING_COUNT; count++) {
 				if (irq_statistics[count] > 0)
-					pr_err("%s: irq_statistics[%d]=%lu\n", __func__, count, irq_statistics[count]);
+					pr_info("%s: irq_statistics[%d]=%lu\n", __func__, count, irq_statistics[count]);
 				}
 			}
 #endif
@@ -450,6 +479,7 @@ static int oob_task(void *pm_oob)
 			pr_err("%s: irq callback isn't registerred or paramter is NULL, irq_handler=%p, para=%p\n",
 				__func__, penv->cnss_wlan_oob_irq_handler, penv->cnss_wlan_oob_pm);
 		}
+		penv->oob_ts.timestamp_end = cnss_get_timestamp();
 	}
 
 	complete_and_exit(&penv->oob_completion, 0);
@@ -462,7 +492,7 @@ int cnss_wlan_oob_shutdown(void)
 	if (!penv) {
 		pr_err("%s: penv is NULL which is unexpected\n", __func__);
 	} else {
-			if (!penv->oob_task) {
+		if (!penv->oob_task) {
 			pr_err("%s: oob_task is NULL which is unexpected\n", __func__);
 		} else {
 			pr_info("%s: wait for oob task finished itself\n", __func__);
@@ -493,7 +523,7 @@ static int wlan_oob_irq_put(void)
 	if (!penv) {
 		pr_err("%s: penv is NULL which is unexpected\n", __func__);
 	} else {
-			if (!penv->oob_task) {
+		if (!penv->oob_task) {
 			pr_err("%s: oob_task is NULL which is unexpected\n", __func__);
 		} else {
 			pr_info("%s: try to kill the oob task\n", __func__);
@@ -586,6 +616,11 @@ int cnss_wlan_unregister_oob_irq_handler(void *pm_oob)
 		} else if (pm_oob != penv->cnss_wlan_oob_pm) {
 			pr_err("%s: wrong parameter\n", __func__);
 			ret = -EINVAL;
+		} else if (penv->oob_shutdown == 1) {
+			pr_err("%s: oob task is already under shutdown\n", __func__);
+			ret = -EBUSY;
+			wait_for_completion(&penv->oob_completion);
+			penv->oob_task = NULL;
 		} else {
 			wlan_oob_irq_put();
 			penv->cnss_wlan_oob_irq_handler = NULL;
@@ -599,7 +634,7 @@ EXPORT_SYMBOL(cnss_wlan_unregister_oob_irq_handler);
 
 int cnss_wlan_vreg_on(struct cnss_wlan_vreg_info *vreg_info)
 {
-	int ret;
+	int ret = 0;
 
 	if (vreg_info->wlan_reg) {
 		ret = regulator_enable(vreg_info->wlan_reg);
@@ -666,7 +701,7 @@ error_enable:
 
 int cnss_wlan_vreg_off(struct cnss_wlan_vreg_info *vreg_info)
 {
-	int ret;
+	int ret = 0;
 
 	if (vreg_info->soc_swreg) {
 		ret = regulator_disable(vreg_info->soc_swreg);
@@ -1419,7 +1454,7 @@ static void __exit cnss_sdio_exit(void)
 	wcnss_prealloc_deinit();
 }
 
-module_init(cnss_sdio_initialize);
+late_initcall_sync(cnss_sdio_initialize);
 module_exit(cnss_sdio_exit);
 
 MODULE_LICENSE("GPL v2");

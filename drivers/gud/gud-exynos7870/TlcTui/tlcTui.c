@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2014 TRUSTONIC LIMITED
+ * Copyright (c) 2013-2015 TRUSTONIC LIMITED
  * All Rights Reserved.
  *
  * This program is free software; you can redistribute it and/or
@@ -18,6 +18,7 @@
 #include <linux/device.h>
 #include <linux/kernel.h>
 #include <linux/kthread.h>
+#include <linux/completion.h>
 
 #include "mobicore_driver_api.h"
 #include "tui_ioctl.h"
@@ -25,6 +26,9 @@
 #include "dciTui.h"
 #include "tui-hal.h"
 
+#if defined(CONFIG_SECURE_OS_BOOSTER_API)
+#include <soc/samsung/secos_booster.h>
+#endif
 
 /* ------------------------------------------------------------- */
 /* Globals */
@@ -129,12 +133,30 @@ static uint32_t send_cmd_to_user(uint32_t command_id)
 	g_user_rsp.id = TLC_TUI_CMD_NONE;
 	g_user_rsp.return_code = TLC_TUI_ERR_UNKNOWN_CMD;
 
-	/* Give way to ioctl thread */
-	complete(&dci_comp);
-	pr_debug("send_cmd_to_user: give way to ioctl thread\n");
+	/* Check that the client (TuiService) is still present before to return
+	 * the command. */
+	if (atomic_read(&fileopened)) {
+		/* S.LSI : Clean up previous response. */
+		complete_all(&io_comp);
+		reinit_completion(&io_comp);
 
-	/* Wait for ioctl thread to complete */
-	wait_for_completion(&io_comp);
+		/* Unlock the ioctl thread (IOCTL_WAIT) in order to let the
+		 * client know that there is a command to process. */
+		pr_info("%s: give way to ioctl thread\n", __func__);
+		complete(&dci_comp);
+		pr_info("TUI TLC is running, waiting for the userland response\n");
+		/* Wait for the client acknowledge (IOCTL_ACK). */
+		unsigned long completed = wait_for_completion_interruptible_timeout(&io_comp,HZ*5);
+		if (!completed) {
+			pr_debug("%s:%d No acknowledge from client, timeout!\n",
+				 __func__, __LINE__);
+		}
+	} else {
+		/* There is no client, do nothing except reporting an error to SWd. */
+		printk(KERN_INFO "TUI TLC seems dead. Not waiting for userland answer\n");
+		ret = TUI_DCI_ERR_INTERNAL_ERROR;
+		goto end;
+	}
 	pr_debug("send_cmd_to_user: Got an answer from ioctl thread.\n");
 	reinit_completion(&io_comp);
 
@@ -158,6 +180,10 @@ static uint32_t send_cmd_to_user(uint32_t command_id)
 		}
 	}
 
+end:
+	/* In any case, reset the value of the command, to ensure that commands
+	 * sent due to inturrupted wait_for_completion are TLC_TUI_CMD_NONE. */
+	reset_global_command_id();
 	return ret;
 }
 
@@ -166,10 +192,15 @@ static void tlc_process_cmd(void)
 {
 	uint32_t ret = TUI_DCI_ERR_INTERNAL_ERROR;
 	uint32_t command_id = CMD_TUI_SW_NONE;
+#if defined(CONFIG_SECURE_OS_BOOSTER_API)
+	int ret_val = 0;
+	u8 retry_cnt = 0;
+	uint32_t TUI_BOOSTER = 0xFFFF0000; /* boosting Frequency = MAX(2.1GHz), Boosting time =  0xFFFF (65536 msec)*/
+#endif
 
 	if  (NULL == dci) {
-		pr_debug("ERROR %s: DCI has not been set up properly - exiting\n",
-			 __func__);
+		pr_debug("ERROR %s: DCI has not been set up properly - exiting"\
+			 "\n", __func__);
 		return;
 	} else {
 		command_id = dci->cmd_nwd.id;
@@ -190,28 +221,51 @@ static void tlc_process_cmd(void)
 	case CMD_TUI_SW_OPEN_SESSION:
 		pr_debug("%s: CMD_TUI_SW_OPEN_SESSION.\n", __func__);
 
+#if defined(CONFIG_SECURE_OS_BOOSTER_API)
+		pr_info("%s TUI_CPU_SPEEDUP ON retry: %d\n",
+			__func__, retry_cnt);
+		do {
+			ret_val = secos_booster_start(TUI_BOOSTER);
+			retry_cnt++;
+			if (ret_val) {
+				pr_err("%s: booster start failed. (%d) retry: %d\n"
+					, __func__, ret_val, retry_cnt);
+				if (retry_cnt < 7)
+					usleep_range(500, 510);
+				}
+			} while (ret_val && retry_cnt < 7);
+#endif
+
 		/* Start android TUI activity */
 		ret = send_cmd_to_user(TLC_TUI_CMD_START_ACTIVITY);
-		if (TUI_DCI_OK != ret)
+		if (TUI_DCI_OK != ret){
+//			send_cmd_to_user(TLC_TUI_CMD_STOP_ACTIVITY);
+			pr_info("%s Start Tuiactivity failed : ret = %d\n", __func__, ret);
 			break;
-
+		}
 		/* allocate TUI frame buffer */
 		ret = hal_tui_alloc(dci->nwd_rsp.alloc_buffer,
 				dci->cmd_nwd.payload.alloc_data.alloc_size,
 				dci->cmd_nwd.payload.alloc_data.num_of_buff);
 
-		if (TUI_DCI_OK != ret)
+		if (TUI_DCI_OK != ret) {
+			pr_err("%s: hal_tui_alloc error : %d\n", __func__ ,ret);
+			/* no need to call tui_i2c_reset, because there will be no TUI
+			 * session */
+			//tui_i2c_reset();
+			send_cmd_to_user(TLC_TUI_CMD_STOP_ACTIVITY);
 			break;
+		}
 
 		/* Deactivate linux UI drivers */
 		ret = hal_tui_deactivate();
 
 		if (TUI_DCI_OK != ret) {
+			pr_err("%s: hal_tui_deactivate error : %d\n", __func__ ,ret);
 			hal_tui_free();
 			send_cmd_to_user(TLC_TUI_CMD_STOP_ACTIVITY);
 			break;
 		}
-
 		break;
 
 	case CMD_TUI_SW_CLOSE_SESSION:
@@ -222,8 +276,17 @@ static void tlc_process_cmd(void)
 
 		hal_tui_free();
 
+#if defined(CONFIG_SECURE_OS_BOOSTER_API)
+		ret_val = secos_booster_stop();
+		if (ret_val)
+			pr_err("%s: booster stop failed. (%d)\n"
+				, __func__, ret_val);
+#endif
 		/* Stop android TUI activity */
-		ret = send_cmd_to_user(TLC_TUI_CMD_STOP_ACTIVITY);
+		/* Ignore return code, because an error means the TLC has been
+		* killed, which imply that the activity is stopped already. */
+		send_cmd_to_user(TLC_TUI_CMD_STOP_ACTIVITY);
+		ret = TUI_DCI_OK;
 		break;
 
 	default:
@@ -292,7 +355,8 @@ bool tlc_notify_event(uint32_t event_type)
 	enum mc_result result;
 
 	if (NULL == dci) {
-		pr_debug("ERROR tlc_notify_event: DCI has not been set up properly - exiting\n");
+		pr_debug("ERROR tlc_notify_event: DCI has not been set up "\
+			 "properly - exiting\n");
 		return false;
 	}
 

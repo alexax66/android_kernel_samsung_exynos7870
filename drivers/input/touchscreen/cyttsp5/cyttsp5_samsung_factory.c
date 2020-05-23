@@ -1370,6 +1370,16 @@ static ssize_t store_cmd(struct device *dev, struct device_attribute
 		goto err_out;
 	}
 
+	if (strlen(buf) >= FACTORY_CMD_STR_LEN) {	
+		dev_err(sfd->dev, "tsp_cmd %s: cmd length(strlen(buf)) is over (%s,%d)!!\n", __func__, buf, (int)strlen(buf));
+		goto err_out;
+	}
+
+	if (count >= (unsigned int)FACTORY_CMD_STR_LEN) {
+		dev_err(sfd->dev, "tsp_cmd %s: cmd length(count) is over (%s,%d)!!\n", __func__, buf, (unsigned int)count);
+		goto err_out;
+	}
+
 	/* check lock  */
 	mutex_lock(&sfd->factory_cmd_lock);
 	sfd->factory_cmd_is_running = true;
@@ -1427,7 +1437,7 @@ static ssize_t store_cmd(struct device *dev, struct device_attribute
 				param_cnt++;
 			}
 			cur++;
-		} while (cur - buf <= len);
+		} while ((cur - buf <= len) && (param_cnt < FACTORY_CMD_PARAM_NUM));
 	}
 
 	dev_info(sfd->dev, "cmd = %s\n", factory_cmd_ptr->cmd_name);

@@ -21,8 +21,8 @@ int mms_power_control(struct mms_ts_info *info, int enable)
 {
 	int ret = 0;
 	struct i2c_client *client = info->client;
-	struct regulator *regulator_dvdd;
-	struct regulator *regulator_avdd;
+	struct regulator *regulator_dvdd = NULL;
+	struct regulator *regulator_avdd = NULL;
 	struct pinctrl_state *pinctrl_state;
 	static bool on;
 
@@ -37,7 +37,7 @@ int mms_power_control(struct mms_ts_info *info, int enable)
 
 	if (info->dtdata->gpio_io_en) {
 		regulator_dvdd = regulator_get(NULL, info->dtdata->gpio_io_en);
-		if (IS_ERR(regulator_dvdd)) {
+		if (IS_ERR_OR_NULL(regulator_dvdd)) {
 				tsp_debug_err(true, &client->dev,"%s: Failed to get %s regulator.\n",
 				 __func__, info->dtdata->gpio_io_en);
 			ret = PTR_ERR(regulator_dvdd);
@@ -46,7 +46,7 @@ int mms_power_control(struct mms_ts_info *info, int enable)
 	}
 
 	regulator_avdd = regulator_get(NULL, info->dtdata->gpio_vdd_en);
-	if (IS_ERR(regulator_avdd)) {
+	if (IS_ERR_OR_NULL(regulator_avdd)) {
 		tsp_debug_err(true, &client->dev,"%s: Failed to get %s regulator.\n",
 			 __func__, info->dtdata->gpio_vdd_en);
 		ret = PTR_ERR(regulator_avdd);
@@ -78,7 +78,7 @@ int mms_power_control(struct mms_ts_info *info, int enable)
 		pinctrl_state = pinctrl_lookup_state(info->pinctrl, "off_state");
 	}
 
-	if (IS_ERR(pinctrl_state)) {
+	if (IS_ERR_OR_NULL(pinctrl_state)) {
 		tsp_debug_err(true, &client->dev,"%s: Failed to lookup pinctrl.\n", __func__);
 	} else {
 		ret = pinctrl_select_state(info->pinctrl, pinctrl_state);
@@ -88,10 +88,12 @@ int mms_power_control(struct mms_ts_info *info, int enable)
 
 	on = enable;
 out:
-	if (info->dtdata->gpio_io_en) {
+	if (info->dtdata->gpio_io_en && !IS_ERR_OR_NULL(regulator_dvdd)) {
 		regulator_put(regulator_dvdd);
 	}
-	regulator_put(regulator_avdd);
+	if (!IS_ERR_OR_NULL(regulator_avdd)) {
+		regulator_put(regulator_avdd);
+	}
 
 	if (!enable)
 		usleep_range(10 * 1000, 11 * 1000);
@@ -120,6 +122,7 @@ void mms_clear_input(struct mms_ts_info *info)
 	}
 
 	info->touch_count = 0;
+	info->check_multi = 0;
 
 	input_sync(info->input_dev);
 	return;
@@ -136,7 +139,7 @@ void mms_input_event_handler(struct mms_ts_info *info, u8 sz, u8 *buf)
 	tsp_debug_dbg(false, &client->dev, "%s [START]\n", __func__);
 	tsp_debug_dbg(false, &client->dev, "%s - sz[%d] buf[0x%02X]\n", __func__, sz, buf[0]);
 
-	for (i = 1; i < sz; i += info->event_size) {
+	for (i = 0; i < sz; i += info->event_size) {
 		u8 *tmp = &buf[i];
 
 		int id = (tmp[0] & MIP_EVENT_INPUT_ID) - 1;
@@ -197,6 +200,7 @@ void mms_input_event_handler(struct mms_ts_info *info, u8 sz, u8 *buf)
 						input_report_key(info->input_dev, BTN_TOUCH, 0);
 						input_report_key(info->input_dev,
 									BTN_TOOL_FINGER, 0);
+						info->check_multi = 0;
 					}
 					info->finger_state[id] = 0;
 					tsp_debug_info(true, &client->dev,
@@ -242,6 +246,10 @@ void mms_input_event_handler(struct mms_ts_info *info, u8 sz, u8 *buf)
 					"P[%d] (%d, %d) z:%d p:%d m:%d,%d tc:%d\n",
 					id, x, y, pressure, palm, touch_major, touch_minor, info->touch_count);
 #endif
+				if ((info->touch_count > 2) && (info->check_multi == 0)) {
+					info->check_multi = 1;
+					info->multi_count++;
+				}
 			}
 		}
 	}
@@ -292,15 +300,26 @@ int mms_parse_devicetree(struct device *dev, struct mms_ts_info *info)
 		info->dtdata->gpio_io_en = NULL;
 	}
 
+	if (of_property_read_u32(np, "melfas,fw-skip", &info->dtdata->fw_update_skip) >= 0)
+		tsp_debug_info(true, dev, "%s() melfas,fw-skip: %d\n", __func__, info->dtdata->fw_update_skip);	
+
 	if (of_property_read_string(np, "melfas,fw_name", &info->dtdata->fw_name)) {
 		tsp_debug_err(true, dev, "Failed to get fw_name property\n");
 		info->dtdata->fw_name = INTERNAL_FW_PATH;
 	}
-
-	tsp_debug_info(true, dev, "%s: fw_name %s max_x:%d max_y:%d int:%d irq:%d sda:%d scl:%d \n",
+	
+	if (of_property_read_u32(np, "melfas,factory_item_version", &info->dtdata->item_version) < 0) {
+		tsp_debug_err(true, dev,  "Failed to get factory_item_version property\n");
+		info->dtdata->item_version = 0;
+	}
+	
+	info->dtdata->support_lpm = of_property_read_bool(np, "melfas,support_lpm");
+	
+	tsp_debug_info(true, dev, "%s: fw_name %s max_x:%d max_y:%d int:%d irq:%d sda:%d scl:%d support_LPM:%d\n",
 		__func__, info->dtdata->fw_name, info->dtdata->max_x, info->dtdata->max_y,
 		info->dtdata->gpio_intr, info->client->irq, info->dtdata->gpio_sda,
-		info->dtdata->gpio_scl);
+		info->dtdata->gpio_scl, info->dtdata->support_lpm);
+
 
 	return 0;
 }
@@ -344,6 +363,7 @@ void mms_config_input(struct mms_ts_info *info)
 	set_bit(EV_KEY, input_dev->evbit);
 	set_bit(KEY_POWER, input_dev->keybit);
 #endif
+	set_bit(KEY_BLACK_UI_GESTURE, input_dev->keybit);
 	tsp_debug_dbg(true, &info->client->dev, "%s [DONE]\n", __func__);
 	return;
 }
@@ -357,11 +377,6 @@ int mms_vbus_notification(struct notifier_block *nb,
 
 	tsp_debug_info(true, &info->client->dev, "%s cmd=%lu, vbus_type=%d\n", __func__, cmd, vbus_type);
 
-	if (!info->enabled) {
-		tsp_debug_err(true, &info->client->dev, "%s tsp disabled",__func__);
-		return 0;
-	}
-
 	switch (vbus_type) {
 	case STATUS_VBUS_HIGH:
 		tsp_debug_info(true, &info->client->dev, "%s : attach\n",__func__);
@@ -374,6 +389,12 @@ int mms_vbus_notification(struct notifier_block *nb,
 	default:
 		break;
 	}
+
+	if (!info->enabled) {
+		tsp_debug_err(true, &info->client->dev, "%s tsp disabled",__func__);
+		return 0;
+	}
+
 	mms_charger_attached(info, info->ta_stsatus);
 	return 0;
 }
@@ -402,3 +423,84 @@ void mms_register_callback(struct tsp_callbacks *cb)
 	pr_info("%s\n", __func__);
 }
 #endif
+
+int mms_lowpower_mode(struct mms_ts_info *info, int on)
+{
+	u8 wbuf[3];
+	u8 rbuf[1];
+
+	if (!info->dtdata->support_lpm) {
+		input_err(true, &info->client->dev, "%s not supported\n", __func__);
+		return -EINVAL;
+	}
+
+	/*	bit	Power state
+	  *	0	active
+	  *	1	low power consumption
+	  */
+
+	wbuf[0] = MIP_R0_CTRL;
+	wbuf[1] = MIP_R1_CTRL_POWER_STATE;
+	wbuf[2] = on;
+
+	if (mms_i2c_write(info, wbuf, 3)) {
+		input_err(true, &info->client->dev, "%s [ERROR] write %x %x %x\n",
+				__func__, wbuf[0], wbuf[1], wbuf[2]);
+		return -EIO;
+	}
+
+	msleep(20);
+
+	if (mms_i2c_read(info, wbuf, 2, rbuf, 1)) {
+		input_err(true, &info->client->dev, "%s [ERROR] read %x %x, rbuf %x\n",
+				__func__, wbuf[0], wbuf[1], rbuf[0]);
+		return -EIO;
+	}
+
+	if (rbuf[0] != on) {
+		input_err(true, &info->client->dev, "%s [ERROR] not changed to %s mode, rbuf %x\n",
+				__func__, on ? "LPM" : "normal", rbuf[0]);
+		return -EIO;
+	}
+
+	// set AOD or SPAY bit
+	wbuf[0] = MIP_R0_AOT;
+	wbuf[1] = MIP_R0_AOT_CTRL;
+	if (mms_i2c_read(info, wbuf, 2, rbuf, 1)) {
+		input_err(true, &info->client->dev, "%s [ERROR] read %x %x, rbuf %x\n",
+				__func__, wbuf[0], wbuf[1], rbuf[0]);
+		return -EIO;
+	}
+
+	input_info(true, &info->client->dev, "%s: AOT ctrl register=%x, flag=%x\n", __func__, rbuf[0], info->lowpower_flag);
+
+	wbuf[2] = rbuf[0] & (info->lowpower_flag << 1);
+
+	wbuf[0] = MIP_R0_AOT;
+	wbuf[1] = MIP_R0_AOT_CTRL;
+
+	if (mms_i2c_write(info, wbuf, 3)) {
+		input_err(true, &info->client->dev, "%s [ERROR] write %x %x %x\n",
+				__func__, wbuf[0], wbuf[1], wbuf[2]);
+		return -EIO;
+	}
+
+	msleep(20);
+
+	if (mms_i2c_read(info, wbuf, 2, rbuf, 1)) {
+		input_err(true, &info->client->dev, "%s [ERROR] read %x %x, rbuf %x\n",
+				__func__, wbuf[0], wbuf[1], rbuf[0]);
+		return -EIO;
+	}
+
+	input_info(true, &info->client->dev, "%s: AOT ctrl register=%x\n", __func__, rbuf[0]);
+
+	if (rbuf[0] != wbuf[2]) {
+		input_err(true, &info->client->dev, "%s [ERROR] not changed to %x mode, rbuf %x\n",
+				__func__, wbuf[2], rbuf[0]);
+		return -EIO;
+	}
+
+	input_info(true, &info->client->dev, "%s: %s mode\n", __func__, on ? "LPM" : "normal");
+	return 0;
+}

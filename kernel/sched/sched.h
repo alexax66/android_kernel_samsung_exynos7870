@@ -202,6 +202,8 @@ struct cfs_bandwidth {
 	/* statistics */
 	int nr_periods, nr_throttled;
 	u64 throttled_time;
+
+	bool distribute_running;
 #endif
 };
 
@@ -1232,11 +1234,18 @@ extern void update_idle_cpu_load(struct rq *this_rq);
 
 extern void init_task_runnable_average(struct task_struct *p);
 
+#ifdef CONFIG_SCHED_AVG_NR_RUNNING
+extern void sched_update_avg_nr_running(int cpu, unsigned long nr_running);
+#else
+static inline void sched_update_avg_nr_running(int cpu, unsigned long nr_running) { }
+#endif
+
 static inline void add_nr_running(struct rq *rq, unsigned count)
 {
 	unsigned prev_nr = rq->nr_running;
 
 	rq->nr_running = prev_nr + count;
+	sched_update_avg_nr_running(cpu_of(rq), rq->nr_running);
 
 	if (prev_nr < 2 && rq->nr_running >= 2) {
 #ifdef CONFIG_SMP
@@ -1263,6 +1272,7 @@ static inline void add_nr_running(struct rq *rq, unsigned count)
 static inline void sub_nr_running(struct rq *rq, unsigned count)
 {
 	rq->nr_running -= count;
+	sched_update_avg_nr_running(cpu_of(rq), rq->nr_running);
 }
 
 static inline void rq_last_tick_reset(struct rq *rq)

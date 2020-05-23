@@ -81,14 +81,6 @@ allnoconfig allyesconfig allmodconfig alldefconfig randconfig: $(obj)/conf
 
 PHONY += listnewconfig olddefconfig oldnoconfig savedefconfig defconfig
 
-ifneq ($(DEVICE_DEFCONFIG),)
-export KCONFIG_DEVICE := arch/$(SRCARCH)/configs/$(DEVICE_DEFCONFIG)
-endif
-
-ifneq ($(VARIANT_DEFCONFIG),)
-export KCONFIG_VARIANT := arch/$(SRCARCH)/configs/$(VARIANT_DEFCONFIG)
-endif
-
 listnewconfig olddefconfig: $(obj)/conf
 	$< --$@ $(Kconfig)
 
@@ -118,7 +110,7 @@ define mergeconfig
 $(if $(wildcard $(objtree)/.config),, $(error You need an existing .config for this target))
 $(if $(call configfiles,$(1)),, $(error No configuration exists for this target on this architecture))
 $(Q)$(CONFIG_SHELL) $(srctree)/scripts/kconfig/merge_config.sh -m -O $(objtree) $(objtree)/.config $(call configfiles,$(1))
-$(Q)yes "" | $(MAKE) -f $(srctree)/Makefile oldconfig
++$(Q)yes "" | $(MAKE) -f $(srctree)/Makefile oldconfig
 endef
 
 PHONY += kvmconfig

@@ -375,9 +375,9 @@
 		errlog5-bits = <0 15>;
 
 		errlog5-axcache-bits = <0 3>;
-		errlog5-axuser-bits = <4 7>;
-		errlog5-axprot-bits = <8 10>;
-		errlog5-axqos-bits = <11 14>;
+		errlog5-axuser-bits = <4 8>;
+		errlog5-axprot-bits = <9 11>;
+		errlog5-axqos-bits = <12 15>;
 
 		/* init, target, subrage detail description */
 		init-num = <3>;
@@ -396,62 +396,30 @@
 			0x0 0x0 0x10000000 0x107b0000>;
 		usersignal-desc =
 			/* INIU_MODEM */
-			"UNKNOWN",		/* 0x00 */
-			"UNKNOWN",		/* 0x01 */
-			"UNKNOWN",		/* 0x02 */
-			"UNKNOWN",		/* 0x03 */
-			"UNKNOWN",		/* 0x04 */
-			"UNKNOWN",		/* 0x05 */
-			"UNKNOWN",		/* 0x06 */
-			"UNKNOWN",		/* 0x07 */
-			"UNKNOWN",		/* 0x08 */
-			"UNKNOWN",		/* 0x09 */
-			"UNKNOWN",		/* 0x0A */
-			"UNKNOWN",		/* 0x0B */
-			"UNKNOWN",		/* 0x0C */
-			"UNKNOWN",		/* 0x0D */
-			"UNKNOWN",		/* 0x0E */
-			"UNKNOWN",		/* 0x0F */
-			"UNKNOWN",		/* 0x10 */
-			"UNKNOWN",		/* 0x11 */
-			"UNKNOWN",		/* 0x12 */
-			"UNKNOWN",		/* 0x13 */
-			"UNKNOWN",		/* 0x14 */
-			"UNKNOWN",		/* 0x15 */
-			"UNKNOWN",		/* 0x16 */
-			"UNKNOWN",		/* 0x17 */
-			"UNKNOWN",		/* 0x18 */
-			"UNKNOWN",		/* 0x19 */
-			"UNKNOWN",		/* 0x1A */
-			"UNKNOWN",		/* 0x1B */
-			"UNKNOWN",		/* 0x1C */
-			"UNKNOWN",		/* 0x1D */
-			"UNKNOWN",		/* 0x1E */
-			"UNKNOWN",		/* 0x1F */
-			"CR7M",			/* 0x20 */
-			"CR7M",			/* 0x21 */
-			"CR7M",			/* 0x22 */
-			"CR7M",			/* 0x23 */
-			"CR7M",			/* 0x24 */
-			"CR7M",			/* 0x25 */
-			"CR7M",			/* 0x26 */
-			"CR7M",			/* 0x27 */
-			"TL3MtoL2",		/* 0x28 */
-			"TL3MtoL2",		/* 0x29 */
-			"TL3MtoL2",		/* 0x2A */
-			"TL3MtoL2",		/* 0x2B */
-			"TL3MtoL2",		/* 0x2C */
-			"TL3MtoL2",		/* 0x2D */
-			"TL3MtoL2",		/* 0x2E */
-			"TL3MtoL2",		/* 0x2F */
-			"DMA",			/* 0x30 */
-			"DMA",			/* 0x31 */
-			"DMA",			/* 0x32 */
-			"DMA",			/* 0x33 */
-			"CSXAP",		/* 0x34 */
-			"DMtoL2",		/* 0x35 */
-			"LMAC",			/* 0x36 */
-			"HMtoL2";		/* 0x37 */
+			"CR7M",		/* 0x00 */
+			"CR7M",		/* 0x01 */
+			"CR7M",		/* 0x02 */
+			"CR7M",		/* 0x03 */
+			"CR7M",		/* 0x04 */
+			"CR7M",		/* 0x05 */
+			"CR7M",		/* 0x06 */
+			"CR7M",		/* 0x07 */
+			"TL3MtoL2",	/* 0x08 */
+			"TL3MtoL2",	/* 0x09 */
+			"TL3MtoL2",	/* 0x0A */
+			"TL3MtoL2",	/* 0x0B */
+			"TL3MtoL2",	/* 0x0C */
+			"TL3MtoL2",	/* 0x0D */
+			"TL3MtoL2",	/* 0x0E */
+			"TL3MtoL2",	/* 0x0F */
+			"DMA",		/* 0x10 */
+			"DMA",		/* 0x11 */
+			"DMA",		/* 0x12 */
+			"DMA",		/* 0x13 */
+			"CSXAP",	/* 0x14 */
+			"DMtoL2",	/* 0x15 */
+			"LMAC",		/* 0x16 */
+			"HMtoL2";	/* 0x17 */
 	};
 
 	BUSMON_PERI_GROUP4@107A0000 {

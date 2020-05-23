@@ -32,7 +32,26 @@
 #include <trace/events/ion.h>
 #include <asm/cacheflush.h>
 
+#ifdef CONFIG_ION_POOL_CACHE_POLICY
+#include <asm/cacheflush.h>
+#endif
+
 #include "ion.h"
+
+struct exynos_ion_platform_heap {
+	struct ion_platform_heap heap_data;
+	struct reserved_mem *rmem;
+	unsigned int id;
+	unsigned int compat_ids;
+	bool secure;
+	bool reusable;
+	bool protected;
+	bool noprot;
+	bool should_isolate;
+	atomic_t secure_ref;
+	struct device dev;
+	struct ion_heap *heap;
+};
 
 struct ion_buffer *ion_handle_buffer(struct ion_handle *handle);
 
@@ -225,6 +244,9 @@ struct ion_heap {
 	struct task_struct *task;
 
 	int (*debug_show)(struct ion_heap *heap, struct seq_file *, void *);
+	atomic_long_t total_allocated;
+	atomic_long_t total_allocated_peak;
+	atomic_long_t total_handles;
 };
 
 /**
@@ -390,6 +412,7 @@ void ion_system_contig_heap_destroy(struct ion_heap *);
 struct ion_heap *ion_carveout_heap_create(struct ion_platform_heap *);
 void ion_carveout_heap_destroy(struct ion_heap *);
 
+void ion_debug_heap_usage_show(struct ion_heap *heap);
 struct ion_heap *ion_chunk_heap_create(struct ion_platform_heap *);
 void ion_chunk_heap_destroy(struct ion_heap *);
 struct ion_heap *ion_cma_heap_create(struct ion_platform_heap *);
@@ -503,6 +526,37 @@ void ion_page_pool_destroy(struct ion_page_pool *);
 void *ion_page_pool_alloc_pages(struct ion_page_pool *pool);
 struct page *ion_page_pool_alloc(struct ion_page_pool *);
 void ion_page_pool_free(struct ion_page_pool *, struct page *);
+void ion_page_pool_free_immediate(struct ion_page_pool *, struct page *);
+
+#ifdef CONFIG_ION_POOL_CACHE_POLICY
+static inline void ion_page_pool_alloc_set_cache_policy
+				(struct ion_page_pool *pool,
+				struct page *page){
+	void *va = page_address(page);
+
+	if (va)
+		set_memory_wc((unsigned long)va, 1 << pool->order);
+}
+
+static inline void ion_page_pool_free_set_cache_policy
+				(struct ion_page_pool *pool,
+				struct page *page){
+	void *va = page_address(page);
+
+	if (va)
+		set_memory_wb((unsigned long)va, 1 << pool->order);
+
+}
+#else
+static inline void ion_page_pool_alloc_set_cache_policy
+				(struct ion_page_pool *pool,
+				struct page *page){ }
+
+static inline void ion_page_pool_free_set_cache_policy
+				(struct ion_page_pool *pool,
+				struct page *page){ }
+#endif
+
 
 /** ion_page_pool_shrink - shrinks the size of the memory cached in the pool
  * @pool:		the pool
@@ -589,6 +643,10 @@ struct ion_eventlog {
 
 void ION_EVENT_SHRINK(struct ion_device *dev, size_t size);
 void ION_EVENT_CLEAR(struct ion_buffer *buffer, ktime_t begin);
+
+void show_ion_system_heap_size(struct seq_file *s);
+void show_ion_system_heap_pool_size(struct seq_file *s);
+
 #else
 #define ION_EVENT_BEGIN()		do { } while (0)
 #define ION_EVENT_DONE()		do { } while (0)

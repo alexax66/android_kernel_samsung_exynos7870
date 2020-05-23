@@ -1,12 +1,12 @@
 /*
  *  drivers/usb/notify/host_notify_class.c
  *
- * Copyright (C) 2011 Samsung, Inc.
+ * Copyright (C) 2011-2017 Samsung, Inc.
  * Author: Dongrak Shin <dongrak.shin@samsung.com>
  *
 */
 
- /* usb notify layer v2.0 */
+ /* usb notify layer v3.0 */
 
 #include <linux/module.h>
 #include <linux/types.h>
@@ -16,6 +16,9 @@
 #include <linux/fs.h>
 #include <linux/err.h>
 #include <linux/host_notify.h>
+#if defined(CONFIG_USB_HW_PARAM)
+#include <linux/usb_notify.h>
+#endif
 
 struct notify_data {
 	struct class *host_notify_class;
@@ -61,6 +64,8 @@ static ssize_t mode_store(
 	size_t ret = -ENOMEM;
 	int sret = 0;
 
+	if (size < strlen(buf))
+		goto error;
 	mode = kzalloc(size+1, GFP_KERNEL);
 	if (!mode)
 		goto error;
@@ -115,6 +120,8 @@ static ssize_t booster_store(
 	size_t ret = -ENOMEM;
 	int sret = 0;
 
+	if (size < strlen(buf))
+		goto error;
 	booster = kzalloc(size+1, GFP_KERNEL);
 	if (!booster)
 		goto error;
@@ -178,6 +185,14 @@ int host_state_notify(struct host_notify_dev *ndev, int state)
 		ndev->state = state;
 		if (state != NOTIFY_HOST_NONE)
 			kobject_uevent(&ndev->dev->kobj, KOBJ_CHANGE);
+#if defined(CONFIG_USB_HW_PARAM)
+		if (state == NOTIFY_HOST_ADD)
+			inc_hw_param_host(ndev, USB_CCIC_OTG_USE_COUNT);
+		else if (state == NOTIFY_HOST_OVERCURRENT)
+			inc_hw_param_host(ndev, USB_CCIC_OVC_COUNT);
+		else
+			;
+#endif
 		return 1;
 	}
 	return 0;

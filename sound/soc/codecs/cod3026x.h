@@ -29,6 +29,8 @@ extern int cod3026x_jack_mic_register(struct snd_soc_codec *codec);
 #define COD3026X_BTN_RELEASED_MASK	BIT(0)
 #define COD3026X_BTN_PRESSED_MASK	BIT(1)
 
+#define MODEL_FLAG_LDET_VTH_ENABLE 0x01
+
 struct cod3026x_jack_det {
 	bool jack_det;
 	bool mic_det;
@@ -40,6 +42,14 @@ struct cod3026x_jack_det {
 	unsigned int button_code;
 	int privious_button_state;
 	int adc_val;
+};
+
+struct cod3026x_water_det {
+	int water_det;
+	int gdet_adc_val;
+	bool jack_det_bypass;
+	bool jack_det;
+	int wrong_jack_cnt;
 };
 
 struct jack_buttons_zone {
@@ -70,7 +80,9 @@ struct cod3026x_priv {
 	bool is_suspend;
 	bool is_probe_done;
 	struct cod3026x_jack_det jack_det;
+	struct cod3026x_water_det water_det;
 	struct mutex jackdet_lock;
+	struct mutex waterdet_lock;
 	struct switch_dev sdev;
 	struct completion initialize_complete;
 
@@ -93,15 +105,31 @@ struct cod3026x_priv {
 	int mic_adc_range;
 	int mic_det_delay;
 	int btn_release_value;
+	int btn_press_delay;
+	int water_threshold_adc_min1;
+	int water_threshold_adc_min2;
+	int water_threshold_adc_max;
+	int ctrl_thd_vol;
 	struct jack_buttons_zone jack_buttons_zones[4];
 	struct delayed_work buttons_work;
 	struct workqueue_struct *buttons_wq;
 	struct iio_channel *jack_adc;
 	unsigned int use_det_adc_mode;
-	struct delayed_work jack_det_work;
+	unsigned int use_det_gdet_adc_mode;
+	struct work_struct jack_det_work;
 	struct workqueue_struct *jack_det_wq;
-	struct delayed_work jack_det_adc_work;
+	struct work_struct jack_det_adc_work;
 	struct workqueue_struct *jack_det_adc_wq;
+	struct delayed_work water_det_adc_work;
+	struct workqueue_struct *water_det_adc_wq;
+	struct delayed_work water_det_polling_work;
+	struct workqueue_struct *water_det_polling_wq;
+	struct work_struct adc_mute_work;
+	struct mutex adc_mute_lock;
+	struct workqueue_struct *adc_mute_wq;
+	int adc_pin;
+	struct wake_lock jack_wake_lock;
+	unsigned int model_feature_flag;
 };
 
 /*
@@ -814,6 +842,9 @@ struct cod3026x_priv {
 #define ABN_STA_CHK_SHIFT	1
 #define ABN_STA_CHK_MASK	BIT(ABN_STA_CHK_SHIFT)
 
+#define DIGITAL_POWER_RVD_SHIFT	0
+#define DIGITAL_POWER_RVD_MASK	BIT(DIGITAL_POWER_RVD_SHIFT)
+
 /* COD3026X_41_FORMAT */
 #define DATA_WORD_LENGTH_SHIFT	6
 #define DATA_WORD_LENGTH_WIDTH	2
@@ -893,8 +924,16 @@ struct cod3026x_priv {
 #define AD_DA_DVOL_MAXNUM	0x97
 
 /** COD3026X_53_MQS **/
+#define NORMQS_GN_SHIFT 1
+#define NORMQS_GN_WIDTH 2
+#define NORMQS_GN_MASK  MASK(NORMQS_GN_WIDTH, NORMQS_GN_SHIFT)
+
+/** COD3026X_53_MQS **/
 #define MQS_MODE_SHIFT		0
 #define MQS_MODE_MASK		BIT(MQS_MODE_SHIFT)
+
+#define MQS_20KHZ	3
+#define NO_MQS_1	0
 
 /** COD3026X_54_DNC1	**/
 #define EN_DNC_SHIFT		7
@@ -1124,9 +1163,19 @@ struct cod3026x_priv {
 #define CTRV_JD_POP_WIDTH	2
 #define CTRV_JD_POP_MASK	MASK(CTRV_JD_POP_WIDTH, CTRV_JD_POP_SHIFT)
 
+#define CTRV_JD_POP_500K	0
+#define CTRV_JD_POP_1000K	1
+#define CTRV_JD_POP_1500K	2
+#define CTRV_JD_POP_2000K	3
+
 #define CTRV_JD_VTH_SHIFT	0
 #define CTRV_JD_VTH_WIDTH	2
 #define CTRV_JD_VTH_MASK	MASK(CTRV_JD_VTH_WIDTH, CTRV_JD_VTH_SHIFT)
+
+#define CTRV_JD_VTH_50K 	0
+#define CTRV_JD_VTH_150K	1
+#define CTRV_JD_VTH_600K	2
+#define CTRV_JD_VTH_1000K	3
 
 /** COD3026_84_JACK_DET2 **/
 #define CTMD_JD_IRQ_DBNC_SHIFT  4

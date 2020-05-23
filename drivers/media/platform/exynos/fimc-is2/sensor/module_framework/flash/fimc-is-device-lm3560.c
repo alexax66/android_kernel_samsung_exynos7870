@@ -302,6 +302,7 @@ MODULE_DEVICE_TABLE(of, exynos_fimc_is_sensor_flash_lm3560_match);
 /* register I2C driver */
 static const struct i2c_device_id flash_lm3560_i2c_idt[] = {
 	{ "LM3560", 0 },
+	{},
 };
 
 static struct i2c_driver sensor_flash_lm3560_i2c_driver = {

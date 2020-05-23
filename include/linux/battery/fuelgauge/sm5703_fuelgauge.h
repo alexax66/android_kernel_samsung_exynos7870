@@ -26,6 +26,10 @@
 #define FG_DRIVER_VER "0.0.0.1"
 #define USE_SUSPEND_LATE
 
+#if defined(CONFIG_BATTERY_AGE_FORECAST)
+#define ENABLE_BATT_LONG_LIFE 1
+#endif
+
 enum sm5703_valrt_mode {
 	SM5703_NORMAL_MODE = 0,
 	SM5703_RECOVERY_MODE,
@@ -89,6 +93,12 @@ struct sm5703_fg_info {
 	u8 reg_data[2];
 
 	int battery_table[3][16];
+#ifdef ENABLE_BATT_LONG_LIFE
+	int v_max_table[5];
+	int q_max_table[5];
+	int v_max_now;
+	int q_max_now;
+#endif
 	int rce_value[3];
 	int dtcd_value;
 	int rs_value[4]; /*rs mix_factor max min*/
@@ -127,6 +137,7 @@ struct sm5703_fg_info {
 	int p_batt_current;
 };
 
+#ifndef ENABLE_BATT_LONG_LIFE
 struct sm5703_platform_data {
 	int capacity_max;
 	int capacity_max_margin;
@@ -140,12 +151,18 @@ struct sm5703_platform_data {
 
 	char *fuelgauge_name;
 };
+#endif
 
 struct sm5703_fuelgauge_data {
 	struct device           *dev;
 	struct i2c_client       *i2c;
 	struct mutex            fuelgauge_mutex;
+#ifdef ENABLE_BATT_LONG_LIFE
+	sec_battery_platform_data_t *pdata;
+#else
 	struct sm5703_platform_data *pdata;
+#endif
+
 	struct power_supply             psy_fg;
 	struct delayed_work isr_work;
 
@@ -165,6 +182,10 @@ struct sm5703_fuelgauge_data {
 	unsigned int capacity_old;      /* only for atomic calculation */
 	unsigned int capacity_max;      /* only for dynamic calculation */
 	unsigned int standard_capacity;
+
+#if defined(CONFIG_BATTERY_AGE_FORECAST)
+	unsigned int chg_full_soc; /* BATTERY_AGE_FORECAST */
+#endif
 
 	bool initial_update_of_soc;
 	struct mutex fg_lock;

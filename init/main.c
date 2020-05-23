@@ -102,9 +102,6 @@ static int kernel_init(void *);
 extern void init_IRQ(void);
 extern void fork_init(unsigned long);
 extern void radix_tree_init(void);
-#ifndef CONFIG_DEBUG_RODATA
-static inline void mark_rodata_ro(void) { }
-#endif
 #ifdef CONFIG_KNOX_KAP
 int boot_mode_security;
 EXPORT_SYMBOL(boot_mode_security);
@@ -195,13 +192,21 @@ static int __init obsolete_checksetup(char *line)
 			} else if (!p->setup_func) {
 				pr_warn("Parameter %s is obsolete, ignored\n",
 					p->str);
-				return 1;
-			} else if (p->setup_func(line + n))
-				return 1;
+				had_early_param = 1;
+				goto fail;
+			} else {
+				set_memsize_reserved_name(p->str);
+				if (p->setup_func(line + n)) {
+					had_early_param = 1;
+					goto fail;
+				}
+			}
 		}
 		p++;
 	} while (p < __setup_end);
 
+fail:
+	unset_memsize_reserved_name();
 	return had_early_param;
 }
 
@@ -439,6 +444,7 @@ static int __init do_early_param(char *param, char *val, const char *unused)
 		    (strcmp(param, "console") == 0 &&
 		     strcmp(p->str, "earlycon") == 0)
 		) {
+			set_memsize_reserved_name(p->str);
 			if (p->setup_func(val) != 0)
 				pr_warn("Malformed early option '%s'\n", param);
 		}
@@ -453,6 +459,7 @@ static int __init do_early_param(char *param, char *val, const char *unused)
 			}
 	}
 #endif
+	unset_memsize_reserved_name();
 	return 0;
 }
 
@@ -505,6 +512,7 @@ void __init __weak thread_info_cache_init(void)
  */
 static void __init mm_init(void)
 {
+	set_memsize_kernel_type(MEMSIZE_KERNEL_MM_INIT);
 	/*
 	 * page_cgroup requires contiguous pages,
 	 * bigger than MAX_ORDER unless SPARSEMEM.
@@ -515,8 +523,16 @@ static void __init mm_init(void)
 	percpu_init_late();
 	pgtable_init();
 	vmalloc_init();
+	set_memsize_kernel_type(MEMSIZE_KERNEL_OTHERS);
 }
 #ifdef	CONFIG_TIMA_RKP
+#ifdef CONFIG_TIMA_RKP_4G
+__attribute__((section(".rkp.bitmap"))) u8 rkp_pgt_bitmap_arr[0x20000] = {0};
+__attribute__((section(".rkp.dblmap"))) u8 rkp_map_bitmap_arr[0x20000] = {0};
+#else
+__attribute__((section(".rkp.bitmap"))) u8 rkp_pgt_bitmap_arr[0x18000] = {0};
+__attribute__((section(".rkp.dblmap"))) u8 rkp_map_bitmap_arr[0x18000] = {0};
+#endif
 extern void* vmm_extra_mem;
 u8 rkp_started = 0;
 static void rkp_init(void)
@@ -530,7 +546,7 @@ static void rkp_init(void)
 	init.rkp_pgt_bitmap = (u64)__pa(rkp_pgt_bitmap);
 	init.rkp_map_bitmap = (u64)__pa(rkp_map_bitmap);
 	init.rkp_pgt_bitmap_size = RKP_PGT_BITMAP_LEN;
-	init.zero_pg_addr = page_to_phys(empty_zero_page);
+	init.zero_pg_addr = (u64)__pa(empty_zero_page);
 	init._text = (u64) _text;
 	init._etext = (u64) _etext;
 	if (!vmm_extra_mem) {
@@ -557,6 +573,7 @@ asmlinkage __visible void __init start_kernel(void)
 	char *command_line;
 	char *after_dashes;
 
+	set_memsize_kernel_type(MEMSIZE_KERNEL_OTHERS);
 	/*
 	 * Need to run as early as possible, to initialize the
 	 * lockdep hash:
@@ -594,6 +611,8 @@ asmlinkage __visible void __init start_kernel(void)
 	page_alloc_init();
 
 	pr_notice("Kernel command line: %s\n", boot_command_line);
+	/* parameters may set static keys */
+	jump_label_init();
 	parse_early_param();
 
 	after_dashes = parse_args("Booting kernel",
@@ -614,8 +633,6 @@ asmlinkage __visible void __init start_kernel(void)
 	vmm_init();
 #endif //CONFIG_KNOX_KAP
 #endif //CONFIG_TIMA_RKP
-
-	jump_label_init();
 
 	/*
 	 * These use large bootmem allocations and must precede
@@ -644,6 +661,10 @@ asmlinkage __visible void __init start_kernel(void)
 		local_irq_disable();
 	idr_init_cache();
 	rcu_init();
+
+	/* trace_printk() and trace points may be used after this */
+	trace_init();
+
 	context_tracking_init();
 	radix_tree_init();
 	/* init some links before init_ISA_irqs() */
@@ -742,6 +763,7 @@ asmlinkage __visible void __init start_kernel(void)
 
 	check_bugs();
 
+	acpi_subsystem_init();
 	sfi_init_late();
 
 	if (efi_enabled(EFI_RUNTIME_SERVICES)) {
@@ -751,6 +773,7 @@ asmlinkage __visible void __init start_kernel(void)
 
 	ftrace_init();
 
+	set_memsize_kernel_type(MEMSIZE_KERNEL_STOP);
 	/* Do the rest non-__init'ed, we're now alive */
 	rest_init();
 }
@@ -1018,6 +1041,28 @@ extern void gpio_dvs_check_initgpio(void);
  
 static noinline void __init kernel_init_freeable(void);
 
+#ifdef CONFIG_DEBUG_RODATA
+static bool rodata_enabled = true;
+static int __init set_debug_rodata(char *str)
+{
+	return strtobool(str, &rodata_enabled);
+}
+__setup("rodata=", set_debug_rodata);
+
+static void mark_readonly(void)
+{
+	if (rodata_enabled)
+		mark_rodata_ro();
+	else
+		pr_info("Kernel memory protection disabled.\n");
+}
+#else
+static inline void mark_readonly(void)
+{
+	pr_warn("This architecture does not have kernel memory protection.\n");
+}
+#endif
+
 static int __ref kernel_init(void *unused)
 {
 	int ret;
@@ -1035,7 +1080,7 @@ static int __ref kernel_init(void *unused)
 	/* need to finish all async __init code before freeing the memory */
 	async_synchronize_full();
 	free_initmem();
-	mark_rodata_ro();
+	mark_readonly();
 	system_state = SYSTEM_RUNNING;
 	numa_default_policy();
 

@@ -75,6 +75,7 @@
 #include <linux/context_tracking.h>
 #include <linux/compiler.h>
 #include <linux/exynos-ss.h>
+#include <linux/cgroup.h>
 
 #include <asm/switch_to.h>
 #include <asm/tlb.h>
@@ -2431,7 +2432,7 @@ bool single_task_running(void)
 }
 EXPORT_SYMBOL(single_task_running);
 
-#ifdef CONFIG_SCHED_HMP
+#if defined(CONFIG_SCHED_HMP) || defined(CONFIG_SEC_PHCOMP)
 unsigned long nr_running_cpu(unsigned int cpu)
 {
 	return cpu_rq(cpu)->nr_running;
@@ -2704,7 +2705,8 @@ static noinline void __schedule_bug(struct task_struct *prev)
 static inline void schedule_debug(struct task_struct *prev)
 {
 #ifdef CONFIG_SCHED_STACK_END_CHECK
-	BUG_ON(unlikely(task_stack_end_corrupted(prev)));
+	if (task_stack_end_corrupted(prev))
+		panic("corrupted stack end detected inside scheduler\n");
 #endif
 	/*
 	 * Test if we are atomic. Since do_exit() needs to call into
@@ -4460,6 +4462,7 @@ long __sched io_schedule_timeout(long timeout)
 	delayacct_blkio_end();
 	return ret;
 }
+EXPORT_SYMBOL(io_schedule_timeout);
 
 /**
  * sys_sched_get_priority_max - return maximum RT priority.
@@ -8296,7 +8299,6 @@ struct cgroup_subsys cpu_cgrp_subsys = {
 	.fork		= cpu_cgroup_fork,
 	.can_attach	= cpu_cgroup_can_attach,
 	.attach		= cpu_cgroup_attach,
-	.allow_attach   = subsys_cgroup_allow_attach,
 	.exit		= cpu_cgroup_exit,
 	.legacy_cftypes	= cpu_files,
 	.early_init	= 1,

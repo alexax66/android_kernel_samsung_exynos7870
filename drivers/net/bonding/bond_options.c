@@ -625,7 +625,7 @@ int __bond_opt_set(struct bonding *bond,
 out:
 	if (ret)
 		bond_opt_error_interpret(bond, opt, ret, val);
-	else
+	else if (bond->dev->reg_state == NETREG_REGISTERED)
 		call_netdevice_notifiers(NETDEV_CHANGEINFODATA, bond->dev);
 
 	return ret;
@@ -1032,13 +1032,6 @@ static int bond_option_arp_validate_set(struct bonding *bond,
 {
 	netdev_info(bond->dev, "Setting arp_validate to %s (%llu)\n",
 		    newval->string, newval->value);
-
-	if (bond->dev->flags & IFF_UP) {
-		if (!newval->value)
-			bond->recv_probe = NULL;
-		else if (bond->params.arp_interval)
-			bond->recv_probe = bond_arp_rcv;
-	}
 	bond->params.arp_validate = newval->value;
 
 	return 0;

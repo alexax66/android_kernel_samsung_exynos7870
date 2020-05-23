@@ -50,6 +50,11 @@ static void cache_init(struct cache_head *h)
 	h->last_refresh = now;
 }
 
+static inline int cache_is_valid(struct cache_head *h);
+static void cache_fresh_locked(struct cache_head *head, time_t expiry);
+static void cache_fresh_unlocked(struct cache_head *head,
+				struct cache_detail *detail);
+
 struct cache_head *sunrpc_cache_lookup(struct cache_detail *detail,
 				       struct cache_head *key, int hash)
 {
@@ -94,6 +99,9 @@ struct cache_head *sunrpc_cache_lookup(struct cache_detail *detail,
 				*hp = tmp->next;
 				tmp->next = NULL;
 				detail->entries --;
+				if (cache_is_valid(tmp) == -EAGAIN)
+					set_bit(CACHE_NEGATIVE, &tmp->flags);
+				cache_fresh_locked(tmp, 0);
 				freeme = tmp;
 				break;
 			}
@@ -109,8 +117,10 @@ struct cache_head *sunrpc_cache_lookup(struct cache_detail *detail,
 	cache_get(new);
 	write_unlock(&detail->hash_lock);
 
-	if (freeme)
+	if (freeme) {
+		cache_fresh_unlocked(freeme, detail);
 		cache_put(freeme, detail);
+	}
 	return new;
 }
 EXPORT_SYMBOL_GPL(sunrpc_cache_lookup);
@@ -1187,14 +1197,14 @@ int sunrpc_cache_pipe_upcall(struct cache_detail *detail, struct cache_head *h)
 	}
 
 	crq->q.reader = 0;
-	crq->item = cache_get(h);
 	crq->buf = buf;
 	crq->len = 0;
 	crq->readers = 0;
 	spin_lock(&queue_lock);
-	if (test_bit(CACHE_PENDING, &h->flags))
+	if (test_bit(CACHE_PENDING, &h->flags)) {
+		crq->item = cache_get(h);
 		list_add_tail(&crq->q.list, &detail->queue);
-	else
+	} else
 		/* Lost a race, no longer PENDING, so don't enqueue */
 		ret = -EAGAIN;
 	spin_unlock(&queue_lock);
@@ -1230,7 +1240,7 @@ int qword_get(char **bpp, char *dest, int bufsize)
 	if (bp[0] == '\\' && bp[1] == 'x') {
 		/* HEX STRING */
 		bp += 2;
-		while (len < bufsize) {
+		while (len < bufsize - 1) {
 			int h, l;
 
 			h = hex_to_bin(bp[0]);

@@ -41,6 +41,7 @@ struct sub_channel_info_type {
 	unsigned char	ucSubchID;
 	unsigned short uiStartAddress;
 	unsigned char ucTMId;
+	unsigned char ucCAFlag;
 	unsigned char ucServiceType;
 	unsigned long ulServiceID;
 	unsigned char num_of_user_appl;
@@ -85,10 +86,6 @@ unsigned char dmb_drv_set_ch_factory(
 unsigned short dmb_drv_get_ber(void);
 unsigned char dmb_drv_get_ant(void);
 signed short dmb_drv_get_rssi(void);
-int dmb_drv_byte_write(u16 addr, u8 data);
-int dmb_drv_byte_read(u16 addr, u8* data);
-int dmb_drv_word_write(u16 addr, u16 data);
-int dmb_drv_word_read(u16 addr, u16* data);
 int tdmb_interrupt_fic_callback(u32 userdata, u8 *data, int length);
 int tdmb_interrupt_msc_callback(
 	u32 userdata, u8 subchannel_id, u8 *data, int length);

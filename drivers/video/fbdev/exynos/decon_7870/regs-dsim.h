@@ -214,7 +214,7 @@
 #define DSIM_CMD_CONFIG_PKT_SEND_CNT_MASK	(0xfff << 8)
 #define DSIM_CMD_CONFIG_MULTI_CMD_PKT_EN	(1 << 7)
 #define DSIM_CMD_CONFIG_MULTI_PKT_CNT(_x)	((_x) << 0)
-#define DSIM_CMD_CONFIG_MULTI_PKT_CNT_MASK	(0xffff << 0)
+#define DSIM_CMD_CONFIG_MULTI_PKT_CNT_MASK	(0x7f << 0)
 
 /* TE based command register*/
 #define DSIM_CMD_TE_CTRL0			(0x7C)

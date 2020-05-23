@@ -1693,9 +1693,14 @@ static int read_nonraw(struct ldc_channel *lp, void *buf, unsigned int size)
 
 		lp->rcv_nxt = p->seqid;
 
+		/*
+		 * If this is a control-only packet, there is nothing
+		 * else to do but advance the rx queue since the packet
+		 * was already processed above.
+		 */
 		if (!(p->type & LDC_DATA)) {
 			new = rx_advance(lp, new);
-			goto no_data;
+			break;
 		}
 		if (p->stype & (LDC_ACK | LDC_NACK)) {
 			err = data_ack_nack(lp, p);
@@ -2307,7 +2312,7 @@ void *ldc_alloc_exp_dring(struct ldc_channel *lp, unsigned int len,
 	if (len & (8UL - 1))
 		return ERR_PTR(-EINVAL);
 
-	buf = kzalloc(len, GFP_KERNEL);
+	buf = kzalloc(len, GFP_ATOMIC);
 	if (!buf)
 		return ERR_PTR(-ENOMEM);
 

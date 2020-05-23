@@ -65,8 +65,16 @@ enum dev_format {
 	MAX_DEV_FORMAT,
 };
 
-#define MAX_SIPC_DEVICES	(IPC_RFS + 1)	/* FMT, RAW, RFS */
-#define MAX_SIPC5_DEVICES	(IPC_RAW + 1)	/* FMT, RAW */
+enum legacy_ipc_map {
+	IPC_MAP_FMT = 0,
+#ifdef CONFIG_MODEM_IF_QOS
+	IPC_MAP_HPRIO_RAW,
+#endif
+	IPC_MAP_NORM_RAW,
+	MAX_SIPC_MAP,
+};
+
+#define MAX_SIPC5_DEVICES	(IPC_RAW + 1) /* FMT, RAW */
 
 #define MAX_SIPC_CHANNELS	256	/* 2 ^ 8		*/
 #define MAX_LINK_CHANNELS	32	/* up to 32 channels	*/
@@ -262,6 +270,7 @@ enum iodev_attr_bit {
 	ATTR_NO_LINK_HEADER,	/* Link-layer header is not needed	*/
 	ATTR_NO_CHECK_MAXQ,     /* no need to check rxq overflow condition */
 	ATTR_DUALSIM,		/* support Dual SIM */
+	ATTR_OPTION_REGION,	/* region & operator info */
 };
 #define IODEV_ATTR(b)	(0x1 << b)
 
@@ -293,6 +302,7 @@ struct modem_io_t {
 	enum modem_link tx_link;
 	u32 attrs;
 	char *app;
+	char *option_region;
 #if 1/*defined(CONFIG_LINK_DEVICE_MEMORY_SBD)*/
 	unsigned int ul_num_buffers;
 	unsigned int ul_buffer_size;

@@ -220,6 +220,7 @@ struct audmixer_priv {
 	bool is_alc_enabled;
 	bool update_fw;
 	bool is_regs_stored;
+	bool is_bt_fm_combo;
 	const struct audmixer_hw_config *hw;
 	unsigned long cp_event;
 	struct work_struct cp_notification_work;
@@ -628,6 +629,60 @@ static int audmixer_set_bclk_ratio(struct snd_soc_dai *dai, unsigned int ratio)
 	return ret;
 }
 
+static int audmixer_set_fmt(struct snd_soc_dai *dai, unsigned int fmt)
+{
+
+	if (g_audmixer == NULL)
+		return -EINVAL;
+
+	/* Format is priority */
+	switch (fmt & SND_SOC_DAIFMT_FORMAT_MASK) {
+		case SND_SOC_DAIFMT_I2S:
+			regmap_update_bits(g_audmixer->regmap,
+					AUDMIXER_REG_07_IN3_CTL1,
+					(I2S_PCM_MODE_MASK << INCTL1_I2S_PCM_SHIFT),
+					(I2S_PCM_MODE_I2S << INCTL1_I2S_PCM_SHIFT));
+			regmap_update_bits(g_audmixer->regmap,
+					AUDMIXER_REG_09_IN3_CTL3,
+					(INCTL3_PCM_DF_MASK << INCTL3_PCM_DF_SHIFT),
+					(PCM_DF_SHORT_FRAME << INCTL3_PCM_DF_SHIFT));
+			break;
+		case SND_SOC_DAIFMT_DSP_A:
+			regmap_update_bits(g_audmixer->regmap,
+					AUDMIXER_REG_07_IN3_CTL1,
+					(I2S_PCM_MODE_MASK << INCTL1_I2S_PCM_SHIFT),
+					(I2S_PCM_MODE_PCM << INCTL1_I2S_PCM_SHIFT));
+			regmap_update_bits(g_audmixer->regmap,
+					AUDMIXER_REG_09_IN3_CTL3,
+					(INCTL3_PCM_DF_MASK << INCTL3_PCM_DF_SHIFT),
+					(PCM_DF_LONG_FRAME << INCTL3_PCM_DF_SHIFT));
+			break;
+		default:
+			dev_err(g_audmixer->dev, "Data Format not supported\n");
+			return -EINVAL;
+	}
+
+	switch (fmt & SND_SOC_DAIFMT_MASTER_MASK) {
+		case SND_SOC_DAIFMT_CBS_CFS:
+			regmap_update_bits(g_audmixer->regmap,
+				AUDMIXER_REG_07_IN3_CTL1,
+				(MIXER_MODE_MASK << INCTL1_MASTER_SHIFT),
+				MIXER_MASTER << INCTL1_MASTER_SHIFT);
+			break;
+		case SND_SOC_DAIFMT_CBM_CFM:
+			regmap_update_bits(g_audmixer->regmap,
+				AUDMIXER_REG_07_IN3_CTL1,
+				(MIXER_MODE_MASK << INCTL1_MASTER_SHIFT),
+				MIXER_SLAVE << INCTL1_MASTER_SHIFT);
+			break;
+		default:
+			dev_err(g_audmixer->dev, "Format not supported\n");
+			return -EINVAL;
+	}
+
+	return 0;
+}
+
 /*
  * audmixer_hw_params: Configure different interfaces of Audio Mixer.
  *
@@ -650,7 +705,7 @@ static int audmixer_hw_params(struct snd_pcm_substream *substream,
 {
 	enum audmixer_if_t interface = (enum audmixer_if_t)(dai->id);
 	int dl_bit;
-	unsigned int hq_mode;
+	unsigned int hq_mode = 0;
 	unsigned int sys_clk_freq;
 	unsigned int aifrate;
 	int ret;
@@ -714,9 +769,6 @@ static int audmixer_hw_params(struct snd_pcm_substream *substream,
 				__func__, sys_clk_freq);
 			return ret;
 		}
-		/* Change the clock only when switching the sample rate */
-		if (g_audmixer->aifrate == aifrate)
-			break;
 
 		regmap_update_bits(g_audmixer->regmap, AUDMIXER_REG_0A_HQ_CTL,
 				HQ_CTL_HQ_EN_MASK, hq_mode);
@@ -739,37 +791,53 @@ static int audmixer_hw_params(struct snd_pcm_substream *substream,
 		break;
 
 	case AUDMIXER_IF_BT:
-		ret = regmap_update_bits(g_audmixer->regmap,
-			AUDMIXER_REG_08_IN3_CTL2,
+	case AUDMIXER_IF_FM:
+		switch (g_audmixer->hw->type) {
+		default:
+			ret = regmap_update_bits(g_audmixer->regmap,
+				AUDMIXER_REG_08_IN3_CTL2,
 			(INCTL2_I2S_DL_MASK << INCTL2_I2S_DL_SHIFT),
 			dl_bit);
 
-		/*
-		 * Sample rate setting only requird for PCM master mode, but the
-		 * below configuration have no impact in I2S mode.
-		 */
-		aifrate = params_rate(params);
+			/*
+			 * Sample rate setting only requird for PCM master mode, but the
+			 * below configuration have no impact in I2S mode.
+			 */
+			aifrate = params_rate(params);
 
-		switch (aifrate) {
-		case AUDMIXER_SAMPLE_RATE_8KHZ:
-			ret = regmap_update_bits(g_audmixer->regmap,
-				AUDMIXER_REG_07_IN3_CTL1,
-				(INCTL1_MPCM_SRATE_MASK << INCTL1_MPCM_SRATE_SHIFT),
-				(MPCM_SRATE_8KHZ << INCTL1_MPCM_SRATE_SHIFT));
-			break;
-		case AUDMIXER_SAMPLE_RATE_16KHZ:
-			ret = regmap_update_bits(g_audmixer->regmap,
-				AUDMIXER_REG_07_IN3_CTL1,
-				(INCTL1_MPCM_SRATE_MASK << INCTL1_MPCM_SRATE_SHIFT),
-				(MPCM_SRATE_16KHZ << INCTL1_MPCM_SRATE_SHIFT));
-			break;
-		default:
-			dev_warn(g_audmixer->dev,
-					"%s: Unsupported BT samplerate (%d)\n",
-					__func__, aifrate);
+			switch (aifrate) {
+			case AUDMIXER_SAMPLE_RATE_8KHZ:
+				ret = regmap_update_bits(g_audmixer->regmap,
+					AUDMIXER_REG_07_IN3_CTL1,
+					(INCTL1_MPCM_SRATE_MASK << INCTL1_MPCM_SRATE_SHIFT),
+					(MPCM_SRATE_8KHZ << INCTL1_MPCM_SRATE_SHIFT));
+				break;
+			case AUDMIXER_SAMPLE_RATE_16KHZ:
+				ret = regmap_update_bits(g_audmixer->regmap,
+					AUDMIXER_REG_07_IN3_CTL1,
+					(INCTL1_MPCM_SRATE_MASK << INCTL1_MPCM_SRATE_SHIFT),
+					(MPCM_SRATE_16KHZ << INCTL1_MPCM_SRATE_SHIFT));
+				break;
+			case AUDMIXER_SAMPLE_RATE_48KHZ:
+				break;
+			default:
+				dev_warn(g_audmixer->dev,
+						"%s: Unsupported BT/FM samplerate (%d)\n",
+						__func__, aifrate);
+				break;
+			}
+			regmap_update_bits(g_audmixer->regmap, AUDMIXER_REG_0A_HQ_CTL,
+				HQ_CTL_HQ_EN_MASK, hq_mode);
+			sys_clk_freq = AUDMIXER_SYS_CLK_FREQ_48KHZ;
+			ret = clk_set_rate(g_audmixer->clk_dout, sys_clk_freq);
+			if (ret != 0) {
+				dev_err(g_audmixer->dev,
+					"%s: Error setting mixer sysclk rate as %u\n",
+					__func__, sys_clk_freq);
+				return ret;
+			}
 			break;
 		}
-
 		break;
 
 	case AUDMIXER_IF_AP1:
@@ -800,6 +868,7 @@ static int audmixer_hw_params(struct snd_pcm_substream *substream,
 
 	return 0;
 }
+
 
 /*
  * audmixer_startup: Start a particular interface of Audio Mixer
@@ -842,9 +911,27 @@ static int audmixer_startup(struct snd_pcm_substream *stream, struct snd_soc_dai
 	 */
 	atomic_inc(&g_audmixer->use_count[interface]);
 
-	if (interface == AUDMIXER_IF_BT)
-		if (atomic_read(&g_audmixer->use_count[AUDMIXER_IF_BT]) == 1)
-			audmixer_cfg_gpio(g_audmixer->dev, "default");
+	switch (g_audmixer->hw->type) {
+	default:
+		switch (interface) {
+		case AUDMIXER_IF_BT:
+			if (atomic_read(&g_audmixer->use_count[AUDMIXER_IF_BT]) == 1)
+				audmixer_cfg_gpio(g_audmixer->dev, "bt");
+			lpass_set_fm_bt_mux(0);
+			break;
+		case AUDMIXER_IF_FM:
+			if (atomic_read(&g_audmixer->use_count[AUDMIXER_IF_FM]) == 1)
+				audmixer_cfg_gpio(g_audmixer->dev, "fm");
+			if (g_audmixer->is_bt_fm_combo)
+				lpass_set_fm_bt_mux(0);
+			else
+				lpass_set_fm_bt_mux(1);
+			break;
+		default:
+			break;
+		}
+		break;
+	}
 
 	atomic_inc(&g_audmixer->num_active_stream);
 
@@ -875,9 +962,22 @@ static void audmixer_shutdown(struct snd_pcm_substream *stream, struct snd_soc_d
 
 	atomic_dec(&g_audmixer->use_count[interface]);
 
-	if (interface == AUDMIXER_IF_BT)
-		if (atomic_read(&g_audmixer->use_count[AUDMIXER_IF_BT]) == 0)
-			audmixer_cfg_gpio(g_audmixer->dev, "bt-idle");
+	switch (g_audmixer->hw->type) {
+	default:
+		switch (interface) {
+		case AUDMIXER_IF_BT:
+			if (atomic_read(&g_audmixer->use_count[AUDMIXER_IF_BT]) == 0)
+				audmixer_cfg_gpio(g_audmixer->dev, "bt-idle");
+			break;
+		case AUDMIXER_IF_FM:
+			if (atomic_read(&g_audmixer->use_count[AUDMIXER_IF_FM]) == 0)
+				audmixer_cfg_gpio(g_audmixer->dev, "fm-idle");
+			break;
+		default:
+			break;
+		}
+		break;
+	}
 
 	pm_runtime_put_sync(g_audmixer->dev);
 }
@@ -887,6 +987,7 @@ static const struct snd_soc_dai_ops audmixer_dai_ops = {
 	.startup = audmixer_startup,
 	.shutdown = audmixer_shutdown,
 	.hw_params = audmixer_hw_params,
+	.set_fmt = audmixer_set_fmt,
 };
 
 /**
@@ -2025,6 +2126,33 @@ static struct snd_soc_dai_driver audmixer_dais[] = {{
 		.symmetric_channels = 1,
 		.symmetric_samplebits = 1,
 	},{
+		.name = "FM",
+		.id = AUDMIXER_IF_FM,
+		.ops = &audmixer_dai_ops,
+		.playback = {
+			.stream_name = "FM Playback",
+			.channels_min = 2,
+			.channels_max = 2,
+			.rate_min = 8000,
+			.rate_max = 48000,
+			.rates = SNDRV_PCM_RATE_8000 | SNDRV_PCM_RATE_16000 |
+					SNDRV_PCM_RATE_48000 | SNDRV_PCM_RATE_KNOT,
+			.formats = AUDMIXER_FORMATS,
+		},
+		.capture = {
+			.stream_name = "FM Capture",
+			.channels_min = 2,
+			.channels_max = 2,
+			.rate_min = 8000,
+			.rate_max = 48000,
+			.rates = SNDRV_PCM_RATE_8000 | SNDRV_PCM_RATE_16000 |
+					SNDRV_PCM_RATE_48000 | SNDRV_PCM_RATE_KNOT,
+			.formats = AUDMIXER_FORMATS,
+		},
+		.symmetric_rates = 1,
+		.symmetric_channels = 1,
+		.symmetric_samplebits = 1,
+	},{
 		.name = "AMP",
 		.id = AUDMIXER_IF_ADC,
 		.capture = {
@@ -2205,6 +2333,11 @@ static int audmixer_parse_dt(struct device *dev)
 		g_audmixer->update_fw = true;
 	else
 		g_audmixer->update_fw = false;
+
+	if (of_find_property(g_audmixer->dev->of_node, "bt-fm-combo", NULL))
+		g_audmixer->is_bt_fm_combo= true;
+	else
+		g_audmixer->is_bt_fm_combo = false;
 
 	return 0;
 }

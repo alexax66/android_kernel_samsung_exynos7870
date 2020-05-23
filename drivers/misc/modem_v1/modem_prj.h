@@ -233,6 +233,15 @@ static inline bool sipc_ps_ch(u8 ch)
 #define sipc5_is_not_reserved_channel(ch) \
 	((ch) != 0 && (ch) != 5 && (ch) != 6 && (ch) != 27 && (ch) != 255)
 
+#ifdef CONFIG_MODEM_IF_QOS
+#define MAX_NDEV_TX_Q 2
+#else
+#define MAX_NDEV_TX_Q 1
+#endif
+#define MAX_NDEV_RX_Q 1
+/* mark value for high priority packet, hex QOSH */
+#define RAW_HPRIO	0x514F5348
+
 struct vnet {
 	struct io_device *iod;
 	struct link_device *ld;
@@ -418,14 +427,10 @@ struct link_device {
 	struct modem_data *mdm_data;
 
 	/* TX queue of socket buffers */
-	struct sk_buff_head sk_fmt_tx_q;
-	struct sk_buff_head sk_raw_tx_q;
-	struct sk_buff_head *skb_txq[MAX_SIPC_DEVICES];
+	struct sk_buff_head skb_txq[MAX_SIPC_MAP];
 
 	/* RX queue of socket buffers */
-	struct sk_buff_head sk_fmt_rx_q;
-	struct sk_buff_head sk_raw_rx_q;
-	struct sk_buff_head *skb_rxq[MAX_SIPC_DEVICES];
+	struct sk_buff_head skb_rxq[MAX_SIPC_MAP];
 
 	/* Stop/resume control for network ifaces */
 	spinlock_t netif_lock;
@@ -526,6 +531,7 @@ struct modem_shared {
 
 	/* list of activated ndev */
 	struct list_head activated_ndev_list;
+	spinlock_t active_list_lock;
 
 	/* Array of pointers to IO devices corresponding to ch[n] */
 	struct io_device *ch2iod[256];
@@ -640,8 +646,6 @@ struct modem_ctl {
 	struct notifier_block busmon_nfb;
 #endif
 
-	struct work_struct pm_qos_work;
-
 	/* Switch with 2 links in a modem */
 	unsigned int gpio_link_switch;
 
@@ -700,5 +704,6 @@ static inline bool rx_possible(struct modem_ctl *mc)
 }
 
 int sipc5_init_io_device(struct io_device *iod);
+void sipc5_deinit_io_device(struct io_device *iod);
 
 #endif

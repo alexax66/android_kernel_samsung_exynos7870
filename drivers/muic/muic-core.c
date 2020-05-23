@@ -32,10 +32,24 @@
 #include <linux/muic/muic_notifier.h>
 #endif /* CONFIG_MUIC_NOTIFIER */
 
+#if defined(CONFIG_CCIC_NOTIFIER)
+#include <linux/ccic/ccic_notifier.h>
+#endif
+
 #ifdef CONFIG_SWITCH
 static struct switch_dev switch_dock = {
 	.name = "dock",
 };
+
+struct switch_dev switch_uart3 = {
+	.name = "uart3",    /* sys/class/switch/uart3/state */
+};
+
+#ifdef CONFIG_SEC_FACTORY
+struct switch_dev switch_attached_muic_cable = {
+	.name = "attached_muic_cable",	/* sys/class/switch/attached_muic_cable/state */
+};
+#endif
 #endif /* CONFIG_SWITCH */
 
 /* 1: 619K is used as a wake-up noti which sends a dock noti.
@@ -46,13 +60,31 @@ int muic_wakeup_noti = 1;
 #if defined(CONFIG_MUIC_NOTIFIER)
 static struct notifier_block dock_notifier_block;
 
-static void muic_send_dock_intent(int type)
+void muic_send_dock_intent(int type)
 {
 	pr_info("%s: MUIC dock type(%d)\n", __func__, type);
 #ifdef CONFIG_SWITCH
 	switch_set_state(&switch_dock, type);
 #endif
 }
+
+static void muic_jig_uart_cb(int jig_state)
+{
+	pr_info("%s: MUIC uart type(%d)\n", __func__, jig_state);
+#ifdef CONFIG_SWITCH
+	switch_set_state(&switch_uart3, jig_state);
+#endif
+}
+
+#ifdef CONFIG_SEC_FACTORY
+void muic_send_attached_muic_cable_intent(int type)
+{
+	pr_info("%s: MUIC attached_muic_cable type(%d)\n", __func__, type);
+#ifdef CONFIG_SWITCH
+	switch_set_state(&switch_attached_muic_cable, type);
+#endif
+}
+#endif
 
 static int muic_dock_attach_notify(int type, const char *name)
 {
@@ -85,32 +117,21 @@ void muic_set_wakeup_noti(int flag)
 static int muic_handle_dock_notification(struct notifier_block *nb,
 			unsigned long action, void *data)
 {
+#if defined(CONFIG_CCIC_NOTIFIER)
+	CC_NOTI_ATTACH_TYPEDEF *p_noti = (CC_NOTI_ATTACH_TYPEDEF *)data;
+	muic_attached_dev_t attached_dev = p_noti->cable_type;
+#else
 	muic_attached_dev_t attached_dev = *(muic_attached_dev_t *)data;
+#endif
 	int type = MUIC_DOCK_DETACHED;
 	const char *name;
-
-	if (attached_dev == ATTACHED_DEV_JIG_UART_ON_MUIC) {
-		if (muic_wakeup_noti) {
-
-			muic_set_wakeup_noti(0);
-
-			if (action == MUIC_NOTIFY_CMD_ATTACH) {
-				type = MUIC_DOCK_DESKDOCK;
-				name = "Desk Dock Attach";
-				return muic_dock_attach_notify(type, name);
-			}
-			else if (action == MUIC_NOTIFY_CMD_DETACH)
-				return muic_dock_detach_notify();
-		}
-		pr_info("[muic] %s: ignore(%d)\n", __func__, attached_dev);
-		return NOTIFY_DONE;
-	}
 
 	switch (attached_dev) {
 	case ATTACHED_DEV_DESKDOCK_MUIC:
 	case ATTACHED_DEV_DESKDOCK_VB_MUIC:
 #if defined(CONFIG_SEC_FACTORY)
 	case ATTACHED_DEV_JIG_UART_ON_MUIC:
+	case ATTACHED_DEV_JIG_UART_ON_VB_MUIC:
 #endif
 		if (action == MUIC_NOTIFY_CMD_ATTACH) {
 			type = MUIC_DOCK_DESKDOCK;
@@ -248,6 +269,22 @@ static void muic_init_switch_dev_cb(void)
 				__func__, ret);
 		return;
 	}
+
+	ret = switch_dev_register(&switch_uart3);
+	if (ret < 0) {
+		pr_err("%s: Failed to register uart3 switch(%d)\n",
+				__func__, ret);
+		return;
+	}
+
+#ifdef CONFIG_SEC_FACTORY
+	ret = switch_dev_register(&switch_attached_muic_cable);
+	if (ret < 0) {
+		pr_err("%s: Failed to register attached_muic_cable switch(%d)\n",
+				__func__, ret);
+		return;
+	}
+#endif
 #endif /* CONFIG_SWITCH */
 
 #if defined(CONFIG_MUIC_NOTIFIER)
@@ -290,6 +327,41 @@ __setup("pmic_info=", set_switch_sel);
 int get_switch_sel(void)
 {
 	return muic_pdata.switch_sel;
+}
+
+static int set_factory_uart(char *str)
+{
+	int mode;
+
+	get_option(&str, &mode);
+	muic_pdata.is_factory_uart = !!(mode & 0x1);
+
+	pr_info("factory_uart: %sable\n",
+		muic_pdata.is_factory_uart ? "en" : "dis");
+
+	return 0;
+}
+__setup("androidboot.muic_1k=", set_factory_uart);
+
+/* afc_mode:
+ *   0x31 : Disabled
+ *   0x30 : Enabled
+ */
+static int afc_mode = 0x31;
+static int __init set_afc_mode(char *str)
+{
+	int mode;
+	get_option(&str, &mode);
+	afc_mode = (mode & 0x0000FF00) >> 8;
+	pr_info("%s: afc_mode is 0x%02x\n", __func__, afc_mode);
+
+	return 0;
+}
+early_param("charging_mode", set_afc_mode);
+
+int get_afc_mode(void)
+{
+	return afc_mode;
 }
 
 bool is_muic_usb_path_ap_usb(void)
@@ -367,6 +439,7 @@ struct muic_platform_data muic_pdata = {
 	.init_switch_dev_cb	= muic_init_switch_dev_cb,
 	.cleanup_switch_dev_cb	= muic_cleanup_switch_dev_cb,
 	.init_gpio_cb		= muic_init_gpio_cb,
+	.jig_uart_cb		= muic_jig_uart_cb,
 #if defined(CONFIG_USE_SAFEOUT)
 	.set_safeout		= muic_set_safeout,
 #endif /* CONFIG_USE_SAFEOUT */

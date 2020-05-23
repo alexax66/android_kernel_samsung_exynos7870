@@ -87,9 +87,11 @@ void __init smp_set_ops(struct smp_operations *ops)
 
 static unsigned long get_arch_pgd(pgd_t *pgd)
 {
-	phys_addr_t pgdir = virt_to_idmap(pgd);
-	BUG_ON(pgdir & ARCH_PGD_MASK);
-	return pgdir >> ARCH_PGD_SHIFT;
+#ifdef CONFIG_ARM_LPAE
+	return __phys_to_pfn(virt_to_phys(pgd));
+#else
+	return virt_to_phys(pgd);
+#endif
 }
 
 int __cpu_up(unsigned int cpu, struct task_struct *idle)
@@ -109,7 +111,7 @@ int __cpu_up(unsigned int cpu, struct task_struct *idle)
 #endif
 
 #ifdef CONFIG_MMU
-	secondary_data.pgdir = get_arch_pgd(idmap_pgd);
+	secondary_data.pgdir = virt_to_phys(idmap_pgd);
 	secondary_data.swapper_pg_dir = get_arch_pgd(swapper_pg_dir);
 #endif
 	sync_cache_w(&secondary_data);
@@ -714,6 +716,21 @@ void smp_send_stop(void)
 
 	if (num_online_cpus() > 1)
 		pr_warn("SMP: failed to stop secondary CPUs\n");
+}
+
+/* In case panic() and panic() called at the same time on CPU1 and CPU2,
+ * and CPU 1 calls panic_smp_self_stop() before crash_smp_send_stop()
+ * CPU1 can't receive the ipi irqs from CPU2, CPU1 will be always online,
+ * kdump fails. So split out the panic_smp_self_stop() and add
+ * set_cpu_online(smp_processor_id(), false).
+ */
+void panic_smp_self_stop(void)
+{
+	pr_debug("CPU %u will stop doing anything useful since another CPU has paniced\n",
+	         smp_processor_id());
+	set_cpu_online(smp_processor_id(), false);
+	while (1)
+		cpu_relax();
 }
 
 /*

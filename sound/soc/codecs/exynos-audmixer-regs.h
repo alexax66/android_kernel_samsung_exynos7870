@@ -89,6 +89,7 @@
 
 #define MIXER_MASTER			1
 #define MIXER_SLAVE			0
+#define MIXER_MODE_MASK			0x1
 
 #define MPCM_SLOT_64BCK			3
 #define MPCM_SLOT_48BCK			2
@@ -100,6 +101,7 @@
 
 #define I2S_PCM_MODE_PCM		1
 #define I2S_PCM_MODE_I2S		0
+#define I2S_PCM_MODE_MASK		0x1
 
 /* AUDMIXER_REG_02_IN1_CTL2 */
 /* AUDMIXER_REG_05_IN2_CTL2 */

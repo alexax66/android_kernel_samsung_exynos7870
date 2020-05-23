@@ -52,7 +52,9 @@
 
 #define MAX_LOG 25
 #define READ 0
+#ifndef WRITE
 #define WRITE 1
+#endif 
 
 static u8 sm5703_log_cnt;
 static u8 sm5703_log[MAX_LOG][3];
@@ -60,7 +62,9 @@ static u8 sm5703_log[MAX_LOG][3];
 static int sm5703_i2c_read_byte(const struct i2c_client *client, u8 command);
 static int sm5703_i2c_write_byte(const struct i2c_client *client,
 			u8 command, u8 value);
-
+#if defined (CONFIG_MUIC_SM5703_MHL_WA)
+static int sm5703_muic_reg_init(struct sm5703_muic_data *muic_data);
+#endif
 static void sm5703_reg_log(u8 reg, u8 value, u8 rw)
 {
 	sm5703_log[sm5703_log_cnt][0]=reg;
@@ -907,9 +911,35 @@ static int detach_usb(struct sm5703_muic_data *muic_data)
 static int attach_otg_usb(struct sm5703_muic_data *muic_data,
 			muic_attached_dev_t new_dev)
 {
+    struct i2c_client *i2c = muic_data->i2c;
 	int ret = 0;
+    int vbvolt = 0;
+    int intmask2,intr2;
+
+    pr_info("%s:%s\n", MUIC_DEV_NAME, __func__);
+
 
 	if (muic_data->attached_dev == new_dev) {
+        
+        vbvolt = sm5703_i2c_read_byte(i2c, SM5703_MUIC_REG_RSVD_ID1);
+        pr_info("%s:%s  vbvolt = 0x%x\n", MUIC_DEV_NAME, __func__,vbvolt);
+        
+        if (vbvolt & 0x2){ // OTG + VBUS
+            intmask2 = sm5703_i2c_read_byte(i2c, SM5703_MUIC_REG_INTMASK2);
+            pr_info("%s:%s  intmask2 = 0x%x \n", MUIC_DEV_NAME, __func__, intmask2);
+            sm5703_i2c_write_byte(i2c, SM5703_MUIC_REG_INTMASK2, intmask2 | 0x81);
+            
+            sm5703_i2c_guaranteed_wbyte(i2c, SM5703_MUIC_REG_MANSW1,0x24); 
+            sm5703_i2c_guaranteed_wbyte(i2c, SM5703_MUIC_REG_MANSW1,0x25); 
+
+            msleep(50);
+
+            intr2 = sm5703_i2c_read_byte(i2c, SM5703_MUIC_REG_INT2);
+            pr_info("%s:%s  intr2 = 0x%x \n", MUIC_DEV_NAME, __func__, intr2);
+            
+            sm5703_i2c_write_byte(i2c, SM5703_MUIC_REG_INTMASK2, intmask2);
+        }
+       
 		pr_info("%s:%s duplicated(USB)\n", MUIC_DEV_NAME, __func__);
 		return ret;
 	}
@@ -1042,15 +1072,15 @@ static int detach_audiodock(struct sm5703_muic_data *muic_data)
 
 static int attach_jig_uart_boot_on(struct sm5703_muic_data *muic_data, muic_attached_dev_t new_dev)
 {
-//	struct muic_platform_data *pdata = muic_data->pdata;
-//	int ret = 0;
+	struct muic_platform_data *pdata = muic_data->pdata;
+	int ret = 0;
 
 	pr_info("%s:%s JIG UART BOOT-ON\n", MUIC_DEV_NAME, __func__);
 
-//	if (pdata->uart_path == MUIC_PATH_UART_AP)
-//		ret = switch_to_ap_uart(muic_data);
-//	else    
-//		ret = switch_to_cp_uart(muic_data);
+	if (pdata->uart_path == MUIC_PATH_UART_AP)
+		ret = switch_to_ap_uart(muic_data);
+	else
+		ret = switch_to_cp_uart(muic_data);
 
 	new_dev = ATTACHED_DEV_JIG_UART_ON_MUIC;
 	muic_data->attached_dev = new_dev;
@@ -1240,7 +1270,11 @@ static void sm5703_muic_handle_attach(struct sm5703_muic_data *muic_data,
 
 	case ATTACHED_DEV_RDU_TA_MUIC:
 	case ATTACHED_DEV_TA_MUIC:
-		muic_data->attached_dev = ATTACHED_DEV_NONE_MUIC;
+		if (muic_data->intr2 & 0x80) {
+			noti_f = false;
+		} else {
+			muic_data->attached_dev = ATTACHED_DEV_NONE_MUIC;
+		}
 		break;
 	case ATTACHED_DEV_JIG_UART_OFF_VB_MUIC:
 	case ATTACHED_DEV_JIG_UART_OFF_MUIC:
@@ -1461,12 +1495,13 @@ static void sm5703_muic_detect_dev(struct sm5703_muic_data *muic_data)
 		new_dev = ATTACHED_DEV_OTG_MUIC;
 		pr_info("%s : USB_OTG DETECTED\n", MUIC_DEV_NAME);
 		break;
+#ifndef CONFIG_MUIC_SM5703_NOT_SUPPORT_LANHUB
 	case DEV_TYPE1_AUDIO_2:
 		intr = MUIC_INTR_ATTACH;
 		new_dev = ATTACHED_DEV_USB_LANHUB_MUIC;
 		pr_info("%s : LANHUB DETECTED\n", MUIC_DEV_NAME);
 		break;
-
+#endif
 	default:
 		break;
 	}
@@ -1527,9 +1562,19 @@ static void sm5703_muic_detect_dev(struct sm5703_muic_data *muic_data)
 
 	if (val3 & DEV_TYPE3_MHL)
 	{
+#if defined (CONFIG_MUIC_SM5703_MHL_WA)
+		sm5703_print_reg_dump(muic_data);
+
+		pr_info("%s : MHL DETECTED : MUIC Reset\n", MUIC_DEV_NAME);
+		sm5703_i2c_write_byte(i2c, SM5703_MUIC_REG_RESET, 0x01);
+		sm5703_muic_reg_init(muic_data);
+		set_int_mask(muic_data, false);
+		return;
+#else
 		intr = MUIC_INTR_ATTACH;
-		new_dev = ATTACHED_DEV_MHL_MUIC;
-		pr_info("%s : MHL DETECTED\n", MUIC_DEV_NAME);
+		new_dev = ATTACHED_DEV_UNDEFINED_CHARGING_MUIC;
+		pr_info("%s : UNDEFINED VB DETECTED\n", MUIC_DEV_NAME);
+#endif
 	}
 
 	/* If there is no matching device found using device type registers
@@ -1596,13 +1641,19 @@ static void sm5703_muic_detect_dev(struct sm5703_muic_data *muic_data)
 			intr = MUIC_INTR_ATTACH;
 //			new_dev = ATTACHED_DEV_CHARGING_CABLE_MUIC;
 //			pr_info("%s : PS_CABLE DETECTED\n", MUIC_DEV_NAME);
+#if !defined(CONFIG_TYPEB_WATERPROOF_MODEL)
+			new_dev = ATTACHED_DEV_UNDEFINED_CHARGING_MUIC;
+			pr_info("%s : UNDEFINED_CHARGING DETECTED\n", MUIC_DEV_NAME);
+#else
 			new_dev = ATTACHED_DEV_UNDEFINED_RANGE_MUIC;
+			pr_info("%s : UNDEFINED_RANGE DETECTED\n", MUIC_DEV_NAME);
+#endif
 			break;
 		case ADC_RDU_TA:
 			if (vbvolt) {
 				intr = MUIC_INTR_ATTACH;
-				new_dev = ATTACHED_DEV_RDU_TA_MUIC;
-				pr_info("%s : LDU/RDU TA DETECTED\n", MUIC_DEV_NAME);
+				new_dev = ATTACHED_DEV_UNDEFINED_CHARGING_MUIC;
+				pr_info("%s : UNDEFINED_CHARGING DETECTED\n", MUIC_DEV_NAME);
 			}
 			break;
 		case ADC_OPEN:
@@ -1675,6 +1726,11 @@ static int sm5703_muic_reg_init(struct sm5703_muic_data *muic_data)
 	if (ret < 0)
 		pr_err("%s: err write ctrl(%d)\n", __func__, ret);
 
+#if !defined(CONFIG_SEC_FACTORY)
+	/*Set USB ID checking mode as one-shot, for rustproof feature*/
+	disable_periodic_adc_scan(muic_data);
+#endif
+
 	return ret;
 }
 
@@ -1737,6 +1793,7 @@ static irqreturn_t sm5703_muic_irq_thread(int irq, void *data)
 			goto skip_detect_dev;
 	}
 
+	muic_data->intr2 = intr2;
 	sm5703_muic_detect_dev(muic_data);
 
 skip_detect_dev:
@@ -1749,6 +1806,7 @@ static void sm5703_muic_init_detect(struct work_struct *work)
 {
 	struct sm5703_muic_data *muic_data =
 		container_of(work, struct sm5703_muic_data, init_work.work);
+	int adc;
 
 	pr_info("%s:%s\n", MUIC_DEV_NAME, __func__);
 
@@ -1756,6 +1814,22 @@ static void sm5703_muic_init_detect(struct work_struct *work)
 	set_int_mask(muic_data, false);
 
 	sm5703_muic_irq_thread(-1, muic_data);
+
+	adc = sm5703_i2c_read_byte(muic_data->i2c, SM5703_MUIC_REG_ADC);
+	pr_info("%s: adc = 0x%x\n", __func__, adc);
+
+	/* MHL adc = 0x20 ( 100000 ) */
+	if (adc == 0x20) {
+		pr_info("%s: MUIC Reset\n", __func__);
+
+		/* MUIC reset */
+		sm5703_i2c_write_byte(muic_data->i2c, SM5703_MUIC_REG_RESET, 0x01);
+
+		sm5703_muic_reg_init(muic_data);
+
+		/* MUIC Interrupt On */
+		set_int_mask(muic_data, false);
+	}
 }
 
 static int sm5703_init_rev_info(struct sm5703_muic_data *muic_data)
@@ -1800,7 +1874,7 @@ static int sm5703_muic_irq_init(struct sm5703_muic_data *muic_data)
 	if (i2c->irq) {
 		ret = request_threaded_irq(i2c->irq, NULL,
 				sm5703_muic_irq_thread,
-				(IRQF_TRIGGER_FALLING | IRQF_ONESHOT),
+				(IRQF_TRIGGER_LOW | IRQF_ONESHOT),
 				"sm5703-muic", muic_data);
 		if (ret < 0) {
 			pr_err("%s:%s failed to reqeust IRQ(%d)\n",
@@ -1882,6 +1956,7 @@ static int sm5703_muic_probe(struct i2c_client *i2c,
 	muic_data->is_otg_test = false;
 	muic_data->attached_dev = ATTACHED_DEV_UNKNOWN_MUIC;
 	muic_data->is_usb_ready = false;
+	muic_data->intr2 = 0;
 
 	if (muic_data->pdata->init_gpio_cb) {
 		ret = muic_data->pdata->init_gpio_cb(get_switch_sel());

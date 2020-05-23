@@ -483,15 +483,15 @@ static int synaptics_rmi4_i2c_write(struct synaptics_rmi4_data *rmi4_data,
 {
 	int retval;
 	unsigned char retry;
-	unsigned char buf[length + 1];
-	struct i2c_msg msg[] = {
-		{
-			.addr = rmi4_data->i2c_client->addr,
-			.flags = 0,
-			.len = length + 1,
-			.buf = buf,
-		}
-	};
+	unsigned char *buf;
+	struct i2c_msg msg[1];
+	buf = kzalloc(length + 1, GFP_KERNEL);
+	if (!buf) {
+		dev_err(&rmi4_data->i2c_client->dev, 
+			"%s: Failed to alloc mem for buffer\n",
+			__func__);
+		return -ENOMEM;
+	}
 
 	mutex_lock(&(rmi4_data->rmi4_io_ctrl_mutex));
 
@@ -501,6 +501,11 @@ static int synaptics_rmi4_i2c_write(struct synaptics_rmi4_data *rmi4_data,
 		retval = 0;
 		goto exit;
 	}
+
+	msg[0].addr = rmi4_data->i2c_client->addr;
+	msg[0].flags = 0;
+	msg[0].len = length + 1;
+	msg[0].buf = buf;
 
 	retval = synaptics_rmi4_set_page(rmi4_data, addr);
 	if (retval != PAGE_SELECT_LEN) {
@@ -531,6 +536,7 @@ static int synaptics_rmi4_i2c_write(struct synaptics_rmi4_data *rmi4_data,
 
 exit:
 	mutex_unlock(&(rmi4_data->rmi4_io_ctrl_mutex));
+	kfree(buf);
 
 	return retval;
 }

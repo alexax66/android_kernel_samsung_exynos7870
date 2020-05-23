@@ -46,6 +46,10 @@ static void uart_dir_work(void)
 		if (mbox_get_value(MCU_CP, switch_data->mbx_uart_noti))
 			mbox_set_interrupt(MCU_CP, switch_data->int_uart_noti);
 	}
+	else {
+		pr_info("%s: Fail change uart state. C[0x%02x] S[0x%02x] M[0x%02x]\n", __func__,
+			switch_data->uart_connect, switch_data->uart_switch_sel, mbox_get_value(MCU_CP, switch_data->mbx_uart_noti));
+	}
 }
 
 void cp_recheck_uart_dir(void)
@@ -64,11 +68,17 @@ EXPORT_SYMBOL_GPL(cp_recheck_uart_dir);
 static int switch_handle_notification(struct notifier_block *nb,
 				unsigned long action, void *data)
 {
+#if defined(CONFIG_CCIC_NOTIFIER)
+	CC_NOTI_ATTACH_TYPEDEF *p_noti = (CC_NOTI_ATTACH_TYPEDEF *)data;
+	muic_attached_dev_t attached_dev = p_noti->cable_type;
+#else
 	muic_attached_dev_t attached_dev = *(muic_attached_dev_t *)data;
+#endif
 	pr_err("%s: action=%lu attached_dev=%d\n", __func__, action, (int)attached_dev);
 
 	if ((attached_dev == ATTACHED_DEV_JIG_UART_OFF_MUIC) ||
 		(attached_dev == ATTACHED_DEV_JIG_UART_ON_MUIC) ||
+		(attached_dev == ATTACHED_DEV_JIG_UART_ON_VB_MUIC) ||
 		(attached_dev == ATTACHED_DEV_JIG_UART_OFF_VB_MUIC)) {
 		switch (action) {
 		case MUIC_NOTIFY_CMD_DETACH:

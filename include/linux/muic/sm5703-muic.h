@@ -252,6 +252,8 @@ struct sm5703_muic_data {
 
 	struct delayed_work	init_work;
 	struct delayed_work	usb_work;
+	
+	int intr2;
 };
 
 #endif /* __SM5703_H__ */

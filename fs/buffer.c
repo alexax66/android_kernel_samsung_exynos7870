@@ -3021,6 +3021,13 @@ void guard_bio_eod(int rw, struct bio *bio)
 	/* Uhhuh. We've got a bio that straddles the device size! */
 	truncated_bytes = bio->bi_iter.bi_size - (maxsector << 9);
 
+	/*
+	 * The bio contains more than one segment which spans EOD, just return
+	 * and let IO layer turn it into an EIO
+	 */
+	if (truncated_bytes > bvec->bv_len)
+		return;
+
 	/* Truncate the bio.. */
 	bio->bi_iter.bi_size -= truncated_bytes;
 	bvec->bv_len -= truncated_bytes;
@@ -3080,6 +3087,17 @@ int _submit_bh(int rw, struct buffer_head *bh, unsigned long bio_flags)
 		rw |= REQ_SYNC;
 		clear_buffer_sync_flush(bh);
 	}
+
+#ifdef CONFIG_JOURNAL_DATA_TAG
+	if(buffer_journal(bh)) {
+		set_bit(BIO_JOURNAL, &bio->bi_flags);
+		clear_buffer_journal(bh);
+	}
+	if(buffer_jmeta(bh)) {
+		//set_bit(BIO_JMETA, &bio->bi_flags);
+		clear_buffer_jmeta(bh);
+	}
+#endif
 
 	bio_get(bio);
 	submit_bio(rw, bio);

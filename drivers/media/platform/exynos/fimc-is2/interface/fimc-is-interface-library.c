@@ -15,6 +15,7 @@
 #include <asm/cacheflush.h>
 #include <asm/pgtable.h>
 #include <asm/tlbflush.h>
+#include <asm/neon.h>
 
 #include "fimc-is-interface-library.h"
 #include "../fimc-is-device-ischain.h"
@@ -1274,9 +1275,9 @@ int lib_task_init(void)
 			err_lib("failed to create library task_handler(%d)", i);
 			return -ENOMEM;
 		}
-
-		fpsimd_set_as_user(lib->task_taaisp[i].task);
-
+#ifdef ENABLE_FPSIMD_FOR_USER
+		fpsimd_set_task_using(lib->task_taaisp[i].task);
+#endif
 		/* TODO: consider task priority group worker */
 		param.sched_priority = lib_get_task_priority(i);
 		ret = sched_setscheduler_nocheck(lib->task_taaisp[i].task, SCHED_FIFO, &param);
@@ -1351,6 +1352,16 @@ void fimc_is_flush_ddk_thread(void)
 
 		}
 	}
+}
+
+void fimc_is_lib_flush_task_handler(int priority)
+{
+	struct fimc_is_lib_support *lib = &gPtr_lib_support;
+	int task_index = priority - TASK_PRIORITY_BASE - 1;
+
+	dbg_lib("%s: task_index(%d), priority(%d)\n", __func__, task_index, priority);
+
+	flush_kthread_worker(&lib->task_taaisp[task_index].worker);
 }
 
 void fimc_is_load_clear(void)
@@ -1442,6 +1453,8 @@ void set_os_system_funcs(os_system_func_t *funcs)
 	funcs[44] = (os_system_func_t)fimc_is_alloc_reserved_buffer;
 	funcs[45] = (os_system_func_t)fimc_is_free_reserved_buffer;
 	funcs[46] = (os_system_func_t)get_reg_addr;
+
+	funcs[48] = (os_system_func_t)fimc_is_lib_flush_task_handler;
 }
 
 static int fimc_is_memory_page_range(pte_t *ptep, pgtable_t token, unsigned long addr,
@@ -1561,7 +1574,7 @@ int fimc_is_load_bin(void)
 	int ret = 0;
 	int i;
 	struct fimc_is_binary bin;
-	os_system_func_t os_system_funcs[100];
+	os_system_func_t os_system_funcs[100] = { NULL, };
 	struct fimc_is_lib_support *lib = &gPtr_lib_support;
 	struct device *device = &gPtr_lib_support.pdev->dev;
 	/* fixup the memory attribute for every region */
@@ -1610,7 +1623,13 @@ int fimc_is_load_bin(void)
 	}
 
 	/* call start_up function for SDK binary */
+#ifdef ENABLE_FPSIMD_FOR_USER
+	fpsimd_get();
 	((start_up_func_t)lib_isp)((void **)os_system_funcs);
+	fpsimd_put();
+#else
+	((start_up_func_t)lib_isp)((void **)os_system_funcs);
+#endif
 
 	ret = lib_support_init();
 	if (ret < 0) {
@@ -1652,7 +1671,7 @@ int fimc_is_load_bin(void)
 {
 	int ret = 0;
 	struct fimc_is_binary bin;
-	os_system_func_t os_system_funcs[100];
+	os_system_func_t os_system_funcs[100] = { NULL, };
 	struct fimc_is_lib_support *lib = &gPtr_lib_support;
 	struct device *device = &gPtr_lib_support.pdev->dev;
 	/* fixup the memory attribute for every region */
@@ -1722,7 +1741,13 @@ int fimc_is_load_bin(void)
 	}
 
 	/* call start_up function for SDK binary */
+#ifdef ENABLE_FPSIMD_FOR_USER
+	fpsimd_get();
 	((start_up_func_t)lib_isp)((void **)os_system_funcs);
+	fpsimd_put();
+#else
+	((start_up_func_t)lib_isp)((void **)os_system_funcs);
+#endif
 
 	ret = lib_support_init();
 	if (ret < 0) {

@@ -246,6 +246,10 @@ int sensor_zc533_actuator_init(struct v4l2_subdev *subdev, u32 val)
 	struct fimc_is_caldata_list_zc533 *cal_data = NULL;
 	struct i2c_client *client = NULL;
 	long cal_addr;
+#ifdef USE_CAMERA_HW_BIG_DATA
+	struct fimc_is_device_sensor *device = NULL;
+	struct cam_hw_param *hw_param = NULL;
+#endif
 #ifdef DEBUG_ACTUATOR_TIME
 	struct timeval st, end;
 	do_gettimeofday(&st);
@@ -275,8 +279,21 @@ int sensor_zc533_actuator_init(struct v4l2_subdev *subdev, u32 val)
 
 	/* Read into EEPROM data or default setting */
 	ret = sensor_zc533_init(client, cal_data);
-	if (ret < 0)
+	if (ret < 0) {
+#ifdef USE_CAMERA_HW_BIG_DATA
+		device = v4l2_get_subdev_hostdata(subdev);
+		if (device) {
+			if (device->position == SENSOR_POSITION_REAR) {
+				fimc_is_sec_get_rear_hw_param(&hw_param);
+			} else if (device->position == SENSOR_POSITION_FRONT) {
+				fimc_is_sec_get_front_hw_param(&hw_param);
+			}
+		}
+		if (hw_param)
+			hw_param->i2c_af_err_cnt++;
+#endif
 		goto p_err;
+	}
 
 	ret = sensor_zc533_init_position(client, actuator);
 	if (ret < 0)
@@ -485,9 +502,9 @@ int sensor_zc533_actuator_probe(struct i2c_client *client,
 	probe_info("%s sensor_id %d\n", __func__, sensor_id);
 
 	device = &core->sensor[sensor_id];
-	if (!device) {
-		err("sensor device is NULL");
-		ret = -ENOMEM;
+	if (!test_bit(FIMC_IS_SENSOR_PROBE, &device->state)) {
+		err("sensor device is not yet probed");
+		ret = -EPROBE_DEFER;
 		goto p_err;
 	}
 
@@ -556,6 +573,7 @@ MODULE_DEVICE_TABLE(of, exynos_fimc_is_zc533_match);
 
 static const struct i2c_device_id actuator_zc533_idt[] = {
 	{ ACTUATOR_NAME, 0 },
+	{},
 };
 
 static struct i2c_driver actuator_zc533_driver = {

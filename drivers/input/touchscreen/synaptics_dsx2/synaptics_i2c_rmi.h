@@ -42,9 +42,13 @@
 /**************************************/
 /* Define related with driver feature */
 #define FACTORY_MODE
-/*#define PROXIMITY_MODE*/
-/*#define EDGE_SWIPE*/
 #define USE_SHUTDOWN_CB
+#define PALM_MODE
+#ifdef PALM_MODE
+#define INPUT_TOUCH_MAJOR_MAX	255
+#define INPUT_TOUCH_MINOR_MAX	255
+#define INPUT_PALM_MAX		1
+#endif
 
 /*#define CHECK_PR_NUMBER*/
 #define REPORT_2D_W
@@ -53,7 +57,7 @@
 #define REPORT_2D_Z		/* only for CONFIG_SEC_FACTORY */
 #endif
 #ifdef REPORT_2D_Z
-#define DSX_PRESSURE_MAX	255
+#define INPUT_PRESSURE_MAX	255
 #endif
 
 #ifdef CONFIG_INPUT_BOOSTER
@@ -62,9 +66,6 @@
 #if defined(CONFIG_GLOVE_TOUCH)
 #define GLOVE_MODE
 #endif
-
-//#define USE_STYLUS
-#define USE_ACTIVE_REPORT_RATE
 
 /* #define SKIP_UPDATE_FW_ON_PROBE */
 /* #define REPORT_ORIENTATION */
@@ -114,7 +115,7 @@
 
 #define PDT_PROPS (0X00EF)
 #define PDT_START (0x00E9)
-#define PDT_END (0x000A)
+#define PDT_END (0x00D0)
 #define PDT_ENTRY_SIZE (0x0006)
 #define PAGES_TO_SERVICE (10)
 #define PAGE_SELECT_LEN (2)
@@ -222,80 +223,11 @@
 #define CLEAR_COVER_MODE_EN	(CLOSED_COVER_EN | GLOVE_DETECTION_EN)
 #define FLIP_COVER_MODE_EN	(CLOSED_COVER_EN)
 
-#ifdef PROXIMITY_MODE
-#define F51_FINGER_TIMEOUT 50 /* ms */
-#define HOVER_Z_MAX (255)
-
-#define F51_PROXIMITY_ENABLES_OFFSET (0)
-/* Define for proximity enables(F51_CUSTOM_CTRL00) */
-#define FINGER_HOVER_EN (1 << 0)
-#define AIR_SWIPE_EN (1 << 1)
-#define LARGE_OBJ_EN (1 << 2)
-#define HOVER_PINCH_EN (1 << 3)
-#define LARGE_OBJ_WAKEUP_GESTURE_EN (1 << 4)
-/* Reserved 5 */
-#define ENABLE_HANDGRIP_RECOG (1 << 6)
-#define SLEEP_PROXIMITY (1 << 7)
-
 #define F51_GENERAL_CONTROL_OFFSET (1)
 /* Define for General Control(F51_CUSTOM_CTRL01) */
-#define JIG_TEST_EN		(1 << 0)
-#define JIG_COMMAND_EN	(1 << 1)
-#define DEAD_ZONE_EN	(1 << 2)
-#define EN_GHOST_FINGER_STATUS_REPORT	(1 << 3)
-//#define RESERVED		(1 << 4)
-#define EDGE_SWIPE_EN	(1 << 5)
-//#define RESERVED		(1 << 6)
-//#define RESERVED		(1 << 7)
+#define DEAD_ZONE_EN	(1 << 0)
 
 #define F51_GENERAL_CONTROL_2_OFFSET (2)
-/* Define for General Control(F51_CUSTOM_CTRL02) */
-/* Reserved 0 ~ 7 */
-
-/* Define for proximity Controls(F51_CUSTOM_QUERY04) */
-//#define HAS_FINGER_HOVER (1 << 0)
-//#define HAS_AIR_SWIPE (1 << 1)
-//#define HAS_LARGE_OBJ (1 << 2)
-//#define HAS_HOVER_PINCH (1 << 3)
-#define HAS_EDGE_SWIPE (1 << 4)
-//#define HAS_SINGLE_FINGER (1 << 5)
-//#define HAS_GRIP_SUPPRESSION (1 << 6)
-//#define HAS_PALM_REJECTION (1 << 7)
-
-/* Define for proximity Controls 2(F51_CUSTOM_QUERY05) */
-#define HAS_PROFILE_HANDEDNESS (1 << 0)
-#define HAS_LOWG (1 << 1)
-#define HAS_FACE_DETECTION (1 << 2)
-#define HAS_SIDE_BUTTONS (1 << 3)
-#define HAS_CAMERA_GRIP_DETECTION (1 << 4)
-/* Reserved 5 ~ 7 */
-
-/* Define for Detection flag 2(F51_CUSTOM_DATA06) */
-#define HAS_HAND_EDGE_SWIPE_DATA (1 << 0)
-#define SIDE_BUTTON_DETECTED (1 << 1)
-/* Reserved 2 ~ 7 */
-
-#define F51_DATA_RESERVED_SIZE	(1)
-#define F51_DATA_1_SIZE (4)	/* FINGER_HOVER */
-#define F51_DATA_2_SIZE (1)	/* HOVER_PINCH */
-#define F51_DATA_3_SIZE (1)	/* AIR_SWIPE | LARGE_OBJ */
-#define F51_DATA_4_SIZE (2)	/* SIDE_BUTTON */
-#define F51_DATA_5_SIZE	(1)	/* CAMERA_GRIP_DETECTION */
-#define F51_DATA_6_SIZE (2)	/* DETECTION_FLAG2 */
-
-#ifdef EDGE_SWIPE
-#define EDGE_SWIPE_WIDTH_MAX	255
-#define EDGE_SWIPE_PALM_MAX		1
-
-#define EDGE_SWIPE_WITDH_X_OFFSET	5
-#define EDGE_SWIPE_AREA_OFFSET	7
-#endif
-
-#ifdef SIDE_TOUCH
-#define MAX_SIDE_BUTTONS	8
-#define NUM_OF_ACTIVE_SIDE_BUTTONS	6
-#endif
-#endif
 
 #define SYN_I2C_RETRY_TIMES 10
 #define MAX_F11_TOUCH_WIDTH 15
@@ -356,12 +288,6 @@
  * If it is possible to replace that getting address from IC,
  * I recommend the latter than former.
  */
-#ifdef PROXIMITY_MODE
-#define MANUAL_DEFINED_OFFSET_GRIP_EDGE_EXCLUSION_RX	(32)
-#endif
-#ifdef SIDE_TOUCH
-#define MANUAL_DEFINED_OFFSET_SIDEKEY_THRESHOLD	(47)
-#endif
 #ifdef USE_STYLUS
 #define MANUAL_DEFINED_OFFSET_FORCEFINGER_ON_EDGE	(61)
 #endif
@@ -372,6 +298,7 @@ enum synaptics_product_ids {
 	SYNAPTICS_PRODUCT_ID_S5806,
 	SYNAPTICS_PRODUCT_ID_TD4100,
 	SYNAPTICS_PRODUCT_ID_TD4300,
+	SYNAPTICS_PRODUCT_ID_TD4310,
 	SYNAPTICS_PRODUCT_ID_MAX,
 };
 
@@ -411,46 +338,17 @@ struct synaptics_rmi4_f1a_handle {
 	struct synaptics_rmi4_f1a_control button_control;
 };
 
-#ifdef PROXIMITY_MODE
-#ifdef EDGE_SWIPE
-struct synaptics_rmi4_edge_swipe {
-	int sumsize;
-	int palm;
-	int wx;
-	int wy;
-};
-#endif
-
 struct synaptics_rmi4_f51_handle {
 /* CTRL */
-	unsigned char proximity_enables;		/* F51_CUSTOM_CTRL00 */
-	unsigned short proximity_enables_addr;
+	unsigned short custom_control_addr; /* CUSTOM CTRL BASE */
 	unsigned char general_control;			/* F51_CUSTOM_CTRL01 */
 	unsigned short general_control_addr;
 	unsigned char general_control_2;		/* F51_CUSTOM_CTRL02 */
 	unsigned short general_control_2_addr;
-#ifdef PROXIMITY_MODE
-	unsigned short grip_edge_exclusion_rx_addr;
-#endif
-#ifdef SIDE_TOUCH
-	unsigned short sidebutton_tapthreshold_addr;
-#endif
 #ifdef USE_STYLUS
 	unsigned short forcefinger_onedge_addr;
 #endif
-/* QUERY */
-	unsigned char proximity_controls;		/* F51_CUSTOM_QUERY04 */
-	unsigned char proximity_controls_2;		/* F51_CUSTOM_QUERY05 */
-/* DATA */
-	unsigned short detection_flag_2_addr;	/* F51_CUSTOM_DATA06 */
-	unsigned short edge_swipe_data_addr;	/* F51_CUSTOM_DATA07 */
-#ifdef EDGE_SWIPE
-	struct synaptics_rmi4_edge_swipe edge_swipe_data;
-#endif
-	unsigned short side_button_data_addr;	/* F51_CUSTOM_DATA04 */
-	bool finger_is_hover;	/* To print hover log */
 };
-#endif
 
 /*
  * struct synaptics_rmi4_fn_desc - function descriptor fields in PDT
@@ -1576,9 +1474,7 @@ struct synaptics_rmi4_data {
 
 	struct synaptics_rmi4_f12_handle f12;
 	struct synaptics_rmi4_fwu_handle *fwu;
-#ifdef PROXIMITY_MODE
 	struct synaptics_rmi4_f51_handle *f51;
-#endif
 	struct synaptics_rmi4_f54_handle *f54;
 	struct synaptics_rmi4_f55_handle *f55;
 	struct rmidev_handle *rmidev;
@@ -1586,9 +1482,7 @@ struct synaptics_rmi4_data {
 	struct delayed_work rezero_work;
 
 	struct mutex rmi4_device_mutex;
-#ifdef SIDE_TOUCH
-	unsigned char sidekey_data;
-#endif
+
 	bool use_stylus;
 #ifdef SYNAPTICS_RMI_INFORM_CHARGER
 	int ta_status;
@@ -1665,9 +1559,6 @@ int synaptics_rmi4_access_register(struct synaptics_rmi4_data *rmi4_data,
 				bool mode, unsigned short address, int length, unsigned char *value);
 void synpatics_rmi4_release_all_event(struct synaptics_rmi4_data *rmi4_data, unsigned char type);
 
-#ifdef PROXIMITY_MODE
-int synaptics_rmi4_proximity_enables(struct synaptics_rmi4_data *rmi4_data, unsigned char enables);
-#endif
 #ifdef GLOVE_MODE
 int synaptics_rmi4_glove_mode_enables(struct synaptics_rmi4_data *rmi4_data);
 #endif

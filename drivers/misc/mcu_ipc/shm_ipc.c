@@ -229,6 +229,7 @@ static struct platform_driver shmem_driver = {
 		.name = "shm_ipc",
 		.owner = THIS_MODULE,
 		.of_match_table = of_match_ptr(exynos_shm_dt_match),
+		.suppress_bind_attrs = true,
 	},
 };
 module_platform_driver(shmem_driver);

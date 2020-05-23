@@ -153,7 +153,10 @@ static ssize_t fwu_sysfs_write_guest_code_store(struct kobject *kobj,
 static void fwu_img_parse_format(struct synaptics_rmi4_data *rmi4_data);
 static int fwu_do_write_guest_code(struct synaptics_rmi4_data *rmi4_data);
 static int fwu_scan_pdt(struct synaptics_rmi4_data *rmi4_data);
-static void synaptics_rmi4_fwu_reset(struct synaptics_rmi4_data *rmi4_data);
+#ifndef CONFIG_SEC_FACTORY
+static 
+#endif
+void synaptics_rmi4_fwu_reset(struct synaptics_rmi4_data *rmi4_data);
 static int fwu_wait_for_idle(struct synaptics_rmi4_data *rmi4_data, int timeout_ms);
 
 static struct bin_attribute dev_attr_data = {
@@ -3869,6 +3872,13 @@ static ssize_t fwu_sysfs_store_image(struct file *data_file,
 	struct synaptics_rmi4_data *rmi4_data = rmi_attr_kobj_to_drvdata(kobj);
 	struct synaptics_rmi4_fwu_handle *fwu = rmi4_data->fwu;
 
+	if (count > (fwu->img.image_size - fwu->data_pos)) {
+		dev_err(&rmi4_data->i2c_client->dev,
+				"%s: Not enough space in buffer\n",
+				__func__);
+		return -EINVAL;
+	}
+
 	memcpy((void *)(&fwu->ext_data_source[fwu->data_pos]),
 			(const void *)buf,
 			count);
@@ -4466,7 +4476,10 @@ static void synaptics_rmi4_fwu_remove(struct synaptics_rmi4_data *rmi4_data)
 exit:
 	return;
 }
-static void synaptics_rmi4_fwu_reset(struct synaptics_rmi4_data *rmi4_data)
+#ifndef CONFIG_SEC_FACTORY
+static
+#endif
+void synaptics_rmi4_fwu_reset(struct synaptics_rmi4_data *rmi4_data)
 {
 	int retval;
 	struct synaptics_rmi4_fwu_handle *fwu = rmi4_data->fwu;

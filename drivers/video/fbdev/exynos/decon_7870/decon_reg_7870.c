@@ -257,6 +257,7 @@ int decon_reg_wait_linecnt_is_zero_timeout(u32 id, int dsi_idx,
 
 	if (!cnt) {
 		decon_err("wait timeout linecount is zero(%u)\n", linecnt);
+		DISP_SS_DUMP(DISP_DUMP_LINECNT_ZERO);
 		return -EBUSY;
 	}
 
@@ -476,6 +477,17 @@ void decon_reg_set_regs_data(u32 id, int win_idx,
 		regs->wincon = val | (WINCON_OUTSTAND_MAX_DEFAULT <<
 					WINCON_OUTSTAND_MAX_POS);
 	}
+#if defined(CONFIG_EXYNOS_DECON_LCD_S6E8AA5X01)
+#if defined(CONFIG_CAMERA_CIS_2P6_OBJ)
+	/* [Camera overflow w/a]
+	 * For HD or HD+ resolution and certain camera sensor,
+	 * MO setting should be done as below
+	 */
+	val = regs->wincon & (~WINCON_OUTSTAND_MAX_MASK);
+	regs->wincon = val | (WINCON_OUTSTAND_MAX_DEFAULT_HD <<
+				WINCON_OUTSTAND_MAX_POS);
+#endif
+#endif
 	decon_write(id, WINCON(win_idx), regs->wincon);
 	decon_write(id, WIN_MAP(win_idx), regs->winmap);
 	if (regs->winmap & WIN_MAP_MAP) {

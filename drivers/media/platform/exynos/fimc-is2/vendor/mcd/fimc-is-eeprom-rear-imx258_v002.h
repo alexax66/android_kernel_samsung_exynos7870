@@ -18,13 +18,13 @@
 #define EEP_HEADER_MODULE_ID_ADDR          0xAE
 
 /* OEM referenced section */
-#define EEP_OEM_VER_START_ADDR             0x150
+#define EEP_OEM_VER_START_ADDR             0x1E0
 
 /* AWB referenced section */
-#define EEP_AWB_VER_START_ADDR             0x220
+#define EEP_AWB_VER_START_ADDR             0x2E0
 
 /* AP Shading referenced section */
-#define EEP_AP_SHADING_VER_START_ADDR      0x1CE0
+#define EEP_AP_SHADING_VER_START_ADDR      0x1FE0
 
 /* Checksum referenced section */
 #define EEP_CHECKSUM_HEADER_ADDR           0xFC

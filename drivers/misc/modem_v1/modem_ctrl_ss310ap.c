@@ -21,6 +21,7 @@
 #include <linux/of_gpio.h>
 #include <linux/mcu_ipc.h>
 #include <soc/samsung/exynos-pmu.h>
+#include <linux/modem_notifier.h>
 #include <soc/samsung/pmu-cp.h>
 
 #include "modem_prj.h"
@@ -61,6 +62,9 @@ static irqreturn_t cp_wdt_handler(int irq, void *arg)
 
 	if (mc->phone_state == STATE_ONLINE)
 		modem_notify_event(MODEM_EVENT_WATCHDOG);
+
+	/* Disable debug Snapshot */
+	mif_set_snapshot(false);
 
 	exynos_clear_cp_reset();
 	new_state = STATE_CRASH_WATCHDOG;
@@ -131,31 +135,6 @@ static void cp_active_handler(void *arg)
 	}
 }
 
-static int get_system_rev(struct device_node *np)
-{
-	int value, cnt, gpio_cnt;
-	unsigned gpio_hw_rev, hw_rev = 0;
-
-	gpio_cnt = of_gpio_count(np);
-	if (gpio_cnt < 0) {
-		mif_err("failed to get gpio_count from DT(%d)\n", gpio_cnt);
-		return gpio_cnt;
-	}
-
-	for (cnt = 0; cnt < gpio_cnt; cnt++) {
-		gpio_hw_rev = of_get_gpio(np, cnt);
-		if (!gpio_is_valid(gpio_hw_rev)) {
-			mif_err("gpio_hw_rev%d: Invalied gpio\n", cnt);
-			return -EINVAL;
-		}
-
-		value = gpio_get_value(gpio_hw_rev);
-		hw_rev |= (value & 0x1) << cnt;
-	}
-
-	return hw_rev;
-}
-
 #ifdef CONFIG_GPIO_DS_DETECT
 static int get_ds_detect(struct device_node *np)
 {
@@ -181,12 +160,26 @@ static int get_ds_detect(struct device_node *np)
 }
 #endif
 
+static int sys_rev = 0;
+
+static int __init mif_get_hw_rev(char *arg)
+{
+    get_option(&arg, &sys_rev);
+    return 0;
+}
+
+#ifdef CONFIG_MODEM_PIE_REV
+early_param("androidboot.revision", mif_get_hw_rev);
+#else
+early_param("androidboot.hw_rev", mif_get_hw_rev);
+#endif
+
 static int init_mailbox_regs(struct modem_ctl *mc)
 {
 	struct platform_device *pdev = to_platform_device(mc->dev);
 	struct device_node *np = pdev->dev.of_node;
 	unsigned int info_val, val;
-	int sys_rev, ds_det, i;
+	int ds_det, i;
 
 	for (i = 0; i < MAX_MBOX_NUM; i++)
 		mbox_set_value(MCU_CP, i, 0);
@@ -194,7 +187,6 @@ static int init_mailbox_regs(struct modem_ctl *mc)
 	if (np) {
 		mif_dt_read_u32(np, "mbx_ap2cp_info_value", info_val);
 
-		sys_rev = get_system_rev(np);
 		ds_det = get_ds_detect(np);
 		if (sys_rev < 0 || ds_det < 0)
 			return -EINVAL;
@@ -220,6 +212,9 @@ static int ss310ap_on(struct modem_ctl *mc)
 
 	mif_info("+++\n");
 	mif_info("cp_active:%d cp_status:%d\n", cp_active, cp_status);
+
+	/* Enable debug Snapshot */
+	mif_set_snapshot(true);
 
 	mc->phone_state = STATE_OFFLINE;
 

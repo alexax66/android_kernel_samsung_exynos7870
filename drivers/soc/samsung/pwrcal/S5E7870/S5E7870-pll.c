@@ -239,7 +239,7 @@ static int _clk_pll141xx_set_rate(struct pwrcal_clk *clk,
 
 		rate_table = &tmp_rate_table;
 
-		pr_warn("not exist in rate table, p(%d), m(%d), s(%d), fout(%lldHz) %s",
+		pr_warn_once("not exist in rate table, p(%d), m(%d), s(%d), fout(%lldHz) %s",
 				rate_table->pdiv,
 				rate_table->mdiv,
 				rate_table->sdiv,

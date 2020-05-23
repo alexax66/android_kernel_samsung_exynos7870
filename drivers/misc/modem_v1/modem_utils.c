@@ -88,7 +88,7 @@ static inline void ts2utc(struct timespec *ts, struct utc_time *utc)
 	struct tm tm;
 
 	time_to_tm((ts->tv_sec - (sys_tz.tz_minuteswest * 60)), 0, &tm);
-	utc->year = 1900 + tm.tm_year;
+	utc->year = 1900 + (u32)tm.tm_year;
 	utc->mon = 1 + tm.tm_mon;
 	utc->day = tm.tm_mday;
 	utc->hour = tm.tm_hour;
@@ -255,7 +255,7 @@ static inline void dump2hex(char *buff, size_t buff_size,
 {
 	char *dest = buff;
 	size_t len;
-	int i;
+	size_t i;
 
 	if (buff_size < (data_len * 3))
 		len = buff_size / 3;
@@ -616,16 +616,17 @@ void netif_tx_flowctl(struct modem_shared *msd, bool tx_stop)
 {
 	struct io_device *iod;
 
+	spin_lock(&msd->active_list_lock);
 	list_for_each_entry(iod, &msd->activated_ndev_list, node_ndev) {
 		if (tx_stop) {
-			netif_stop_queue(iod->ndev);
+			netif_stop_subqueue(iod->ndev, 0);
 #ifdef DEBUG_MODEM_IF_FLOW_CTRL
 			mif_info("tx_stop:%s, iod->ndev->name:%s\n",
 				tx_stop ? "suspend" : "resume",
 				iod->ndev->name);
 #endif
 		} else {
-			netif_wake_queue(iod->ndev);
+			netif_wake_subqueue(iod->ndev, 0);
 #ifdef DEBUG_MODEM_IF_FLOW_CTRL
 			mif_info("tx_stop:%s, iod->ndev->name:%s\n",
 				tx_stop ? "suspend" : "resume",
@@ -633,6 +634,7 @@ void netif_tx_flowctl(struct modem_shared *msd, bool tx_stop)
 #endif
 		}
 	}
+	spin_unlock(&msd->active_list_lock);
 
 	return;
 }
@@ -1352,3 +1354,7 @@ void __ref modemctl_notify_event(enum modemctl_event evt)
 	raw_notifier_call_chain(&cp_crash_notifier, evt, NULL);
 }
 
+void mif_set_snapshot(bool enable)
+{
+	exynos_ss_set_enable("log_kevents", enable);
+}

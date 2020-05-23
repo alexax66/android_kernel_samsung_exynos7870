@@ -43,8 +43,15 @@ config EXYNOS_CONTENT_PATH_PROTECTION
 	help
 	  Enable content path protection of EXYNOS.
 
+config SCHED_AVG_NR_RUNNING
+	bool "Enable to use average nr_running"
+	default n
+	help
+	  Enable to use average nr_running in scheduler
+
 config EXYNOS_HOTPLUG_GOVERNOR
 	bool "Enable Exynos dynamic hotplug governor"
+	select SCHED_AVG_NR_RUNNING
 
 config EXYNOS_MCINFO
 	bool "Exynos memory controller information"

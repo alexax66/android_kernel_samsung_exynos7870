@@ -92,12 +92,16 @@ void fimc_is_sensor_ctl_get_ae_index(struct fimc_is_device_sensor *device,
 	/* Below setting are different for each sensor */
 	if (module->sensor_id == SENSOR_NAME_S5K2P2 ||
 		module->sensor_id == SENSOR_NAME_S5K2P3 ||
+		module->sensor_id == SENSOR_NAME_S5K2P6 ||
 		module->sensor_id == SENSOR_NAME_S5K2P8 ||
 		module->sensor_id == SENSOR_NAME_S5K3P3 ||
+		module->sensor_id == SENSOR_NAME_S5K3P8 ||
 		module->sensor_id == SENSOR_NAME_S5K3L2 ||
+		module->sensor_id == SENSOR_NAME_S5K3M3 ||
 		module->sensor_id == SENSOR_NAME_IMX220 ||
 		module->sensor_id == SENSOR_NAME_IMX240 ||
 		module->sensor_id == SENSOR_NAME_IMX258 ||
+		module->sensor_id == SENSOR_NAME_S5K5E9 ||
 		module->sensor_id == SENSOR_NAME_SR259) {
 		*expo_index = NEXT_FRAME;
 		*again_index = NEXT_FRAME;

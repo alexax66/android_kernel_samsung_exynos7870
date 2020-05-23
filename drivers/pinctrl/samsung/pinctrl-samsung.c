@@ -38,6 +38,11 @@
 #include "secgpio_dvs.h"
 #endif
 
+#ifdef ENABLE_SENSORS_FPRINT_SECURE
+#include <linux/smc.h>
+extern int fpsensor_goto_suspend;
+#endif
+
 #define GROUP_SUFFIX		"-grp"
 #define GSUFFIX_LEN		sizeof(GROUP_SUFFIX)
 #define FUNCTION_SUFFIX		"-mux"
@@ -450,6 +455,14 @@ static void samsung_pinmux_setup(struct pinctrl_dev *pctldev, unsigned selector,
 	if (!strncmp(bank->name, CONFIG_SENSORS_FP_SPI_GPIO, 4))
 		return;
 #endif
+#ifdef CONFIG_ESE_SECURE
+	if (!strncmp(bank->name, CONFIG_ESE_SECURE_GPIO, 4))
+		return;
+#endif
+#ifdef CONFIG_MST_SECURE_GPIO
+	if (!strncmp(bank->name, "gpc3", 4))
+		return;
+#endif
 
 	type = bank->type;
 	mask = (1 << type->fld_width[PINCFG_TYPE_FUNC]) - 1;
@@ -504,10 +517,20 @@ static int samsung_pinconf_rw(struct pinctrl_dev *pctldev, unsigned int pin,
 	drvdata = pinctrl_dev_get_drvdata(pctldev);
 	pin_to_reg_bank(drvdata, pin - drvdata->ctrl->base, &reg_base,
 					&pin_offset, &bank);
+
 #ifdef ENABLE_SENSORS_FPRINT_SECURE
 	if (!strncmp(bank->name, CONFIG_SENSORS_FP_SPI_GPIO, 4))
 		return 0;
 #endif
+#ifdef CONFIG_ESE_SECURE
+	if (!strncmp(bank->name, CONFIG_ESE_SECURE_GPIO, 4))
+		return 0;
+#endif
+#ifdef CONFIG_MST_SECURE_GPIO
+	if (!strncmp(bank->name, "gpc3", 4))
+		return 0;
+#endif
+
 	type = bank->type;
 
 	if (cfg_type >= PINCFG_TYPE_NUM || !type->fld_width[cfg_type])
@@ -651,8 +674,17 @@ static void samsung_gpio_set(struct gpio_chip *gc, unsigned offset, int value)
 	struct samsung_pin_bank_type *type = bank->type;
 	void __iomem *reg;
 	u32 data;
+
 #ifdef ENABLE_SENSORS_FPRINT_SECURE
 	if (!strncmp(bank->name, CONFIG_SENSORS_FP_SPI_GPIO, 4))
+		return;
+#endif
+#ifdef CONFIG_ESE_SECURE
+	if (!strncmp(bank->name, CONFIG_ESE_SECURE_GPIO, 4))
+		return;
+#endif
+#ifdef CONFIG_MST_SECURE_GPIO
+	if (!strncmp(bank->name, "gpc3", 4))
 		return;
 #endif
 
@@ -1253,6 +1285,14 @@ static void samsung_pinctrl_save_regs(
 		if (!strncmp(bank->name, CONFIG_SENSORS_FP_SPI_GPIO, 4))
 			continue;
 #endif
+#ifdef CONFIG_ESE_SECURE
+		if (!strncmp(bank->name, CONFIG_ESE_SECURE_GPIO, 4))
+			continue;
+#endif
+#ifdef CONFIG_MST_SECURE_GPIO
+		if (!strncmp(bank->name, "gpc3", 4))
+			continue;
+#endif
 
 		for (type = 0; type < PINCFG_TYPE_NUM; type++)
 			if (widths[type])
@@ -1294,7 +1334,20 @@ static void samsung_pinctrl_restore_regs(
 			continue;
 
 #ifdef ENABLE_SENSORS_FPRINT_SECURE
+		if (fpsensor_goto_suspend) {
+			pr_info("pinctrl-etspi_pm_resume: resume smc ret = %d\n",
+					exynos_smc(0x83000022, 0, 0, 0));
+			fpsensor_goto_suspend = 0;
+		}
 		if (!strncmp(bank->name, CONFIG_SENSORS_FP_SPI_GPIO, 4))
+			continue;
+#endif
+#ifdef CONFIG_ESE_SECURE
+		if (!strncmp(bank->name, CONFIG_ESE_SECURE_GPIO, 4))
+			continue;
+#endif
+#ifdef CONFIG_MST_SECURE_GPIO
+		if (!strncmp(bank->name, "gpc3", 4))
 			continue;
 #endif
 
@@ -1343,6 +1396,14 @@ static void samsung_pinctrl_set_pdn_previos_state(
 
 #ifdef ENABLE_SENSORS_FPRINT_SECURE
 		if (!strncmp(bank->name, CONFIG_SENSORS_FP_SPI_GPIO, 4))
+			continue;
+#endif
+#ifdef CONFIG_ESE_SECURE
+		if (!strncmp(bank->name, CONFIG_ESE_SECURE_GPIO, 4))
+			continue;
+#endif
+#ifdef CONFIG_MST_SECURE_GPIO
+		if (!strncmp(bank->name, "gpc3", 4))
 			continue;
 #endif
 
@@ -1715,6 +1776,12 @@ static void gpiodvs_check_init_gpio(struct samsung_pinctrl_drv_data *drvdata,
 		goto out;
 	}
 #endif
+#ifdef CONFIG_MST_SECURE_GPIO
+	if (!strncmp(bank->name, "gpc3", 4)){
+		init_gpio_idx++;
+		goto out;
+	}
+#endif
 
 	/* GPH ports are AUD interface (I2S, UART, PCM, SB) that should not
 	 * access when AUD power is disabled
@@ -1782,6 +1849,18 @@ static void gpiodvs_check_sleep_gpio(struct samsung_pinctrl_drv_data *drvdata,
 
 #ifdef ENABLE_SENSORS_FPRINT_SECURE
 	if (!strncmp(bank->name, CONFIG_SENSORS_FP_SPI_GPIO, 4)) {
+		sleep_gpio_idx++;
+		goto out;
+	}
+#endif
+#ifdef CONFIG_ESE_SECURE
+	if (!strncmp(bank->name, CONFIG_ESE_SECURE_GPIO, 4)) {
+		sleep_gpio_idx++;
+		goto out;
+	}
+#endif
+#ifdef CONFIG_MST_SECURE_GPIO
+	if (!strncmp(bank->name, "gpc3", 4)) {
 		sleep_gpio_idx++;
 		goto out;
 	}

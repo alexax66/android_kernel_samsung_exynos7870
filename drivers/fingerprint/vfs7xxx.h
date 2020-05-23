@@ -41,10 +41,6 @@
 #define DRDY_IRQ_ENABLE			1
 #define DRDY_IRQ_DISABLE		0
 
-#ifdef ENABLE_SENSORS_FPRINT_SECURE
-#define FEATURE_SPI_WAKELOCK
-#endif /* CONFIG_SEC_FACTORY */
-
 /* IOCTL commands definitions */
 
 /*
@@ -138,6 +134,9 @@
 #define VFSSPI_IOCTL_SET_LOCKSCREEN     _IOW(VFSSPI_IOCTL_MAGIC,	\
 							22, unsigned int)
 #endif
+/* To control the power */
+#define VFSSPI_IOCTL_POWER_CONTROL     _IOW(VFSSPI_IOCTL_MAGIC,	\
+							23, unsigned int)
 /* get sensor orienation from the SPI driver*/
 #define VFSSPI_IOCTL_GET_SENSOR_ORIENT	\
 	_IOR(VFSSPI_IOCTL_MAGIC, 18, unsigned int)
@@ -181,5 +180,10 @@ struct vfsspi_ioctl_register_signal {
 	int user_pid;
 	int signal_id;
 };
+
+/* used for WoG mode */
+extern void vfsspi_fp_homekey_ev(void);
+/* export variable for signaling */
+EXPORT_SYMBOL(vfsspi_fp_homekey_ev);
 
 #endif /* VFS7XXX_H_ */

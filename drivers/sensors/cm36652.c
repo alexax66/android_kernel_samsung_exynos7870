@@ -1534,7 +1534,7 @@ static int cm36652_i2c_probe(struct i2c_client *client,
 	INIT_WORK(&cm36652->work_light, cm36652_work_func_light);
 
 	/* set sysfs for proximity sensor */
-	ret = sensors_register(cm36652->proximity_dev,
+	ret = sensors_register(&cm36652->proximity_dev,
 		cm36652, prox_sensor_attrs,
 			"proximity_sensor");
 	if (ret) {
@@ -1544,7 +1544,7 @@ static int cm36652_i2c_probe(struct i2c_client *client,
 	}
 
 	/* set sysfs for light sensor */
-	ret = sensors_register(cm36652->light_dev,
+	ret = sensors_register(&cm36652->light_dev,
 		cm36652, light_sensor_attrs,
 			"light_sensor");
 	if (ret) {

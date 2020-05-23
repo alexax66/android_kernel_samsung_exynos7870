@@ -12,12 +12,14 @@
 #define _MIP4_H_
 
 /* Debug mode : Should be disabled for production builds */
-#if 1	// 0 : disable, 1 : enable
+#if 0	// 0 : disable, 1 : enable
 #define DEBUG
 #endif
+#define OPEN_CLOSE_WORK
 
 /* Include */
 #include <linux/kernel.h>
+#include <linux/module.h>
 #include <linux/gpio.h>
 #include <linux/interrupt.h>
 #include <linux/firmware.h>
@@ -53,9 +55,16 @@
 #include <linux/sec_batt.h>
 #endif // CONFIG_BATTERY_SAMSUNG
 
+#if defined (CONFIG_MUIC_NOTIFIER) && defined (CONFIG_TOUCHKEY_GRIP)
+#include <linux/muic/muic.h>
+#include <linux/muic/muic_notifier.h>
+#endif
+
 //Chip info
-#define CHIP_MHS204	002040
+#define CHIP_MHS204		002040
 #define CHIP_MHS204G	002041
+#define CHIP_MHS2041	002041
+#define CHIP_MHS2041B	002042
 
 #ifdef CONFIG_KEYBOARD_MELFAS_MHS204
 #define CHIP_NAME			"MHS204"
@@ -65,12 +74,20 @@
 #define CHIP_NAME		"MHS204G"
 #define CHIP_MODEL		CHIP_MHS204G
 #endif
+#ifdef CONFIG_KEYBOARD_MELFAS_MHS2041
+#define CHIP_NAME		"MHS2041"
+#define CHIP_MODEL		CHIP_MHS2041
+#endif
+#ifdef CONFIG_KEYBOARD_MELFAS_MHS2041B
+#define CHIP_NAME		"MHS2041B"
+#define CHIP_MODEL		CHIP_MHS2041B
+#endif
 
 /* Config driver */
 #define MIP_USE_INPUT_OPEN_CLOSE	1	// 0 (default) or 1
 #define MIP_AUTOSET_EVENT_FORMAT	1	// 0 or 1 (default)
 #define I2C_RETRY_COUNT			3	// 2~
-#define RESET_ON_I2C_ERROR		0	// 0 or 1 (default)
+#define RESET_ON_I2C_ERROR		1	// 0 or 1 (default)
 #define RESET_ON_EVENT_ERROR		0	// 0 (default) or 1
 #define ESD_COUNT_FOR_DISABLE		7	// 7~
 
@@ -85,17 +102,16 @@
 #define USE_LOW_POWER_MODE	0	// 0 (default) or 1
 #define USE_WAKELOCK			0	// 0 (default) or 1
 
-//Max value
-#define MAX_KEY_NUM	4
-#define MAX_LED_NUM	32
+/* Max value */
+#define MAX_KEY_NUM			4
+#define MAX_LED_NUM			32
 
 /* Firmware update */
-#define FW_PATH_INTERNAL		"melfas_tk/melfas_mip4_tk.fw"	//path of firmware included in the kernel image (/firmware)
-#define FW_PATH_EXTERNAL		"/sdcard/melfas_fw.bin"	//path of firmware in external storage
+#define FW_PATH_EXTERNAL		"/sdcard/firmware/touchkey/melfas_fw.bin"	//path of firmware in external storage
 
 #define MIP_USE_AUTO_FW_UPDATE		1	// 0 (default) or 1
 #define MIP_FW_MAX_SECT_NUM		4
-#define MIP_FW_UPDATE_DEBUG		1	// 0 (default) or 1
+#define MIP_FW_UPDATE_DEBUG		0	// 0 (default) or 1
 #define MIP_FW_UPDATE_SECTION		0	// 0 (default) or 1
 #define MIP_EXT_FW_FORCE_UPDATE		1	// 0 or 1 (default)
 
@@ -141,6 +157,7 @@ struct mip4_tk_info {
 	dev_t mip4_tk_dev;
 	struct class *class;
 	struct mutex lock;
+	struct mutex device;
 	int irq;
 
 #ifdef CONFIG_HAS_EARLYSUSPEND
@@ -154,18 +171,19 @@ struct mip4_tk_info {
 	int pwr_en_gpio;
 	int bus_en_gpio;
 
+	bool boot_on_ldo;
+
 	struct pinctrl *pinctrl;
-	struct pinctrl_state *pins_enable;
-	struct pinctrl_state *pins_disable;
+	struct pinctrl_state *pins_default;
+	struct pinctrl_state *pins_sleep;
 
 	bool init;
 	bool enabled;
 	bool irq_enabled;
 	int power;
 
-	char *fw_name;
 	char *fw_path_ext;
-	u8 firmware_state;
+	int firmware_state;
 
 	u8 product_name[16];
 	u8 node_key;
@@ -178,8 +196,37 @@ struct mip4_tk_info {
 	int key_code[MAX_KEY_NUM];
 	bool key_code_loaded;
 
+	bool irq_checked;
+	int irq_key_count[MAX_KEY_NUM];
+
+#ifdef CONFIG_TOUCHKEY_GRIP
+	struct wake_lock touchkey_wake_lock;
+	u16 grip_p_thd;
+	u16 grip_r_thd;
+	u16 grip_n_thd;
+	u16 grip_baseline;
+	u16 grip_raw1;
+	u16 grip_raw2;
+	u16 grip_event;
+	bool sar_mode;
+	bool sar_enable;
+	bool sar_enable_off;
+	unsigned int grip_ch;
+	int irq_count;
+	int abnormal_mode;
+	s32 diff;
+	s32 max_diff;
+#if defined (CONFIG_MUIC_NOTIFIER)
+	struct notifier_block cpuidle_muic_nb;
+#endif	
+#endif
+
 	unsigned int led_num;
 	unsigned int led_max_brightness;
+
+#if defined(CONFIG_KEYBOARD_MELFAS_MHS2041) || defined(CONFIG_KEYBOARD_MELFAS_MHS2041B)
+	u8 ic_id;
+#endif
 
 	u8 low_power_mode;
 	u8 glove_mode;
@@ -208,6 +255,9 @@ struct mip4_tk_info {
 	void (*register_callback)(void *);
 	struct mip4_tk_callbacks callbacks;
 #endif
+#ifdef OPEN_CLOSE_WORK
+	struct delayed_work resume_work;
+#endif
 };
 
 /*
@@ -223,6 +273,9 @@ int mip4_tk_get_ready_status(struct mip4_tk_info *info);
 int mip4_tk_get_fw_version(struct mip4_tk_info *info, u8 *ver_buf);
 int mip4_tk_get_fw_version_u16(struct mip4_tk_info *info, u16 *ver_buf_u16);
 int mip4_tk_get_fw_version_from_bin(struct mip4_tk_info *info, u8 *ver_buf);
+#ifdef CONFIG_TOUCHKEY_GRIP
+int mip4_tk_set_sar_mode(struct mip4_tk_info *info, u8 mode);
+#endif
 int mip4_tk_set_power_state(struct mip4_tk_info *info, u8 mode);
 int mip4_tk_disable_esd_alert(struct mip4_tk_info *info);
 int mip4_tk_fw_update_from_kernel(struct mip4_tk_info *info, bool force);
@@ -250,6 +303,9 @@ void mip4_tk_config_callback(struct mip4_tk_info *info);
 #endif
 
 /* firmware */
+#if defined(CONFIG_KEYBOARD_MELFAS_MHS2041) || defined(CONFIG_KEYBOARD_MELFAS_MHS2041B)
+int mip4_tk_get_ic_id(struct mip4_tk_info *info);
+#endif
 int mip4_tk_flash_fw(struct mip4_tk_info *info, const u8 *fw_data, size_t fw_size, bool force, bool section);
 int mip4_tk_bin_fw_version(struct mip4_tk_info *info, const u8 *fw_data, size_t fw_size, u8 *ver_buf);
 

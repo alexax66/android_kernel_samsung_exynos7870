@@ -15,6 +15,7 @@
 #ifndef TUI_IOCTL_H_
 #define TUI_IOCTL_H_
 
+#include <linux/completion.h>
 
 
 /* Response header */
@@ -46,7 +47,7 @@ struct tlc_tui_response_t {
 #define TUI_IO_ACK	_IOW(TUI_IO_MAGIC, 3, struct tlc_tui_response_t)
 
 #ifdef INIT_COMPLETION
-#define reinit_completion(x) INIT_COMPLETION(*(x))
+#define reinit_completion(x) init_completion(*(x))
 #endif
 
 #endif /* TUI_IOCTL_H_ */

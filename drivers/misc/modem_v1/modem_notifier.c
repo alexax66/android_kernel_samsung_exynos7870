@@ -26,7 +26,7 @@ static struct raw_notifier_head modem_event_notifier;
 
 int register_modem_event_notifier(struct notifier_block *nb)
 {
-	if(!nb)
+	if (!nb)
 		return -ENOENT;
 
 	return raw_notifier_chain_register(&modem_event_notifier, nb);

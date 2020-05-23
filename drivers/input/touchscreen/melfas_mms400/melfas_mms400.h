@@ -116,6 +116,11 @@
 #define CHIP_NAME		"MMS438"
 #define CHIP_FW_CODE	"M4H0"
 #define FW_UPDATE_TYPE	"MMS438"
+#elif defined(CONFIG_TOUCHSCREEN_MELFAS_MMS438S)
+#define CHIP_MMS438S
+#define CHIP_NAME		"MMS438S"
+#define CHIP_FW_CODE	"M4HS"
+#define FW_UPDATE_TYPE	"MMS438S"
 #elif defined(CONFIG_TOUCHSCREEN_MELFAS_MMS449)
 #define CHIP_MMS449
 #define CHIP_NAME		"MMS449"
@@ -180,6 +185,7 @@
 //Command mode
 #define CMD_LEN				32
 #define CMD_RESULT_LEN			512
+#define CMD_RESULT_STR_LEN		(4096 - 1)
 #define CMD_PARAM_NUM			8
 #if defined(MELFAS_GHOST_TOUCH_AUTO_DETECT)
 #define GHOST_TIMER_INTERVAL	HZ /* 1 sec */
@@ -194,6 +200,21 @@ struct mms_data {
 	int z;
 };
 #endif
+
+/**
+  * LPM status bitmask
+  */
+#define MMS_LPM_FLAG_SPAY		(1 << 0)
+#define MMS_LPM_FLAG_AOD		(1 << 1)
+
+typedef enum {
+	SPONGE_EVENT_TYPE_SPAY			= 0x04,
+	SPONGE_EVENT_TYPE_AOD			= 0x08,
+	SPONGE_EVENT_TYPE_AOD_PRESS		= 0x09,
+	SPONGE_EVENT_TYPE_AOD_LONGPRESS		= 0x0A,
+	SPONGE_EVENT_TYPE_AOD_DOUBLETAB		= 0x0B
+} SPONGE_EVENT_TYPE;
+
 /**
  * Device info structure
  */
@@ -245,6 +266,9 @@ struct mms_ts_info {
 	u8 esd_cnt;
 	bool disable_esd;
 
+	unsigned int sram_addr_num;
+	u32 sram_addr[8];
+
 	u8 *print_buf;
 	int *image_buf;
 
@@ -262,6 +286,9 @@ struct mms_ts_info {
 	char *cmd_result;
 	int cmd_param[CMD_PARAM_NUM];
 	int cmd_buffer_size;
+	int item_count;
+	u8 cmd_all_factory_state;
+	char cmd_result_all[CMD_RESULT_STR_LEN];
 #endif
 
 #if MMS_USE_DEV_MODE
@@ -292,6 +319,24 @@ struct mms_ts_info {
 	struct timer_list ghost_timer;
 #endif
 
+	bool lowpower_mode;
+	unsigned char lowpower_flag;
+	int ic_status;
+	unsigned int scrub_id;
+	unsigned int scrub_x;
+	unsigned int scrub_y;
+
+	u8 check_multi;
+	unsigned int multi_count;
+	unsigned int comm_err_count;
+};
+
+enum IC_STATUS{
+	PWR_ON = 0,
+	PWR_OFF = 1,
+	LPM_RESUME = 2,
+	LPM_SUSPEND = 3,
+
 };
 
 /**
@@ -306,8 +351,11 @@ struct mms_devicetree_data {
 	int gpio_sda;
 	int gpio_scl;
 	int panel;
+	int fw_update_skip;
 	struct regulator *vdd_io;
 	const char *fw_name;
+	bool support_lpm;
+	int item_version;
 };
 
 /**
@@ -373,9 +421,6 @@ int mms_fw_update_from_kernel(struct mms_ts_info *info, bool force);
 int mms_fw_update_from_storage(struct mms_ts_info *info, bool force);
 int mms_fw_update_from_ffu(struct mms_ts_info *info, bool force);
 
-int mms_suspend(struct device *dev);
-int mms_resume(struct device *dev);
-
 //mod
 int mms_power_control(struct mms_ts_info *info, int enable);
 void mms_clear_input(struct mms_ts_info *info);
@@ -389,6 +434,7 @@ int mms_charger_attached(struct mms_ts_info *info, bool status);
 int mms_parse_devicetree(struct device *dev, struct mms_ts_info *info);
 #endif
 void mms_config_input(struct mms_ts_info *info);
+int mms_lowpower_mode(struct mms_ts_info *info, int on);
 
 //fw_update
 int mms_flash_fw(struct mms_ts_info *info, const u8 *fw_data, size_t fw_size,
@@ -411,6 +457,7 @@ static const struct attribute_group mms_test_attr_group;
 #if MMS_USE_CMD_MODE
 int mms_sysfs_cmd_create(struct mms_ts_info *info);
 void mms_sysfs_cmd_remove(struct mms_ts_info *info);
+extern void sec_cmd_set_cmd_result_all(struct mms_ts_info *data, char *buff, int len, char *item);
 static const struct attribute_group mms_cmd_attr_group;
 extern struct class *sec_class;
 #endif
