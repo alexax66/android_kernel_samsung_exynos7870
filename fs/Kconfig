@@ -282,6 +282,13 @@ config DYNAMIC_FSYNC
 	bool "dynamic file sync control"
 	default n
 	help
-	An experimental file sync control using Android's power suspend / late resume drivers
+	  An experimental file sync control using Android's power suspend / late resume drivers
+
+config DYNAMIC_FSYNC_BG_SYNC
+	bool "dynamic background file sync control"
+	default y
+	depends on DYNAMIC_FSYNC
+	help
+	  Use LGE's background file sync function for dynamic file sync control
 
 endmenu
