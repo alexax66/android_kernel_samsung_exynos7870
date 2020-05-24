@@ -203,7 +203,7 @@ fw-shipped-$(CONFIG_SENSORS_TC3XXK_M10) += coreriver/tc305k_m10_grip.fw
 fw-shipped-$(CONFIG_SENSORS_SSP_2017A3) += ssp_stmf410_a2017.fw
 fw-shipped-$(CONFIG_SENSORS_SSP_A3XPREMIUM) += ssp_stmf410_a3p.fw
 fw-shipped-$(CONFIG_SENSORS_SSP_A3Y17PREMIUM) += ssp_stmf410_a2017_p.fw
-fw-shipped-$((CONFIG_SENSORS_SSP_STM32) && (CONFIG_SENSORS_SSP_STM_V2)) += ssp_crashed.fw
+fw-shipped-$((CONFIG_SENSORS_SSP_STM32) || (CONFIG_SENSORS_SSP_STM_V2)) += ssp_crashed.fw
 
 # FPGA for IRIS
 fw-shipped-$(CONFIG_LEDS_IRIS_FPGA_ICE40XX) += ice40xx/ice40_fpga_iris_V01.fw
