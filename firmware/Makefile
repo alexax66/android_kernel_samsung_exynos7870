@@ -183,8 +183,8 @@ fw-shipped-$(CONFIG_KEYBOARD_TC300K) += coreriver/tc350k_j7x.fw coreriver/tc305k
 					coreriver/tc305k_j7top_kor.fw coreriver/tc305k_j7top_gsm.fw
 fw-shipped-$(CONFIG_KEYBOARD_MELFAS_MHS204) += melfas_tk/mhs204g_on7xlte.fw
 fw-shipped-$(CONFIG_KEYBOARD_MELFAS_MHS2041) += melfas_tk/mhs204_j5y17.fw melfas_tk/mhs2041_j5y17.fw melfas_tk/mhs2041_j7y17.fw
-fw-shipped-$(CONFIG_KEYBOARD_MELFAS_MHS2041B) += melfas_tk/mhs2041_j5y17.fw melfas_tk/mhs2041B_j5y17.fw melfas_tk/mhs2041B_j5y17_new.fw \
-						melfas_tk/mhs2041_j7y17.fw melfas_tk/mhs2041B_j7y17.fw melfas_tk/mhs2041B_j7y17_new.fw \
+fw-shipped-$(CONFIG_KEYBOARD_MELFAS_MHS2041B) += melfas_tk/mhs2041B_j5y17.fw melfas_tk/mhs2041B_j5y17_new.fw \
+						melfas_tk/mhs2041B_j7y17.fw melfas_tk/mhs2041B_j7y17_new.fw \
 						melfas_tk/mhs2041B_j7y17_ltn.fw melfas_tk/mhs2041B_j7y17_open.fw melfas_tk/melfas_mip4_tk.fw
 
 fw-shipped-$(CONFIG_KEYBOARD_ABOV_TOUCH_FT1804) += abov/abov_a7_max.fw
@@ -203,8 +203,7 @@ fw-shipped-$(CONFIG_SENSORS_TC3XXK_M10) += coreriver/tc305k_m10_grip.fw
 fw-shipped-$(CONFIG_SENSORS_SSP_2017A3) += ssp_stmf410_a2017.fw
 fw-shipped-$(CONFIG_SENSORS_SSP_A3XPREMIUM) += ssp_stmf410_a3p.fw
 fw-shipped-$(CONFIG_SENSORS_SSP_A3Y17PREMIUM) += ssp_stmf410_a2017_p.fw
-fw-shipped-$(CONFIG_SENSORS_SSP_STM32) += ssp_crashed.fw
-fw-shipped-$(CONFIG_SENSORS_SSP_STM_V2) += ssp_crashed.fw
+fw-shipped-$((CONFIG_SENSORS_SSP_STM32) && (CONFIG_SENSORS_SSP_STM_V2)) += ssp_crashed.fw
 
 # FPGA for IRIS
 fw-shipped-$(CONFIG_LEDS_IRIS_FPGA_ICE40XX) += ice40xx/ice40_fpga_iris_V01.fw
@@ -212,6 +211,9 @@ fw-shipped-$(CONFIG_LEDS_IRIS_FPGA_ICE40XX) += ice40xx/ice40_fpga_iris_V01.fw
 fw-shipped-$(CONFIG_FIVE_TEE_DRIVER) += five/ffffffff000000000000000000000072.tlbin
 
 fw-shipped-all := $(fw-shipped-y) $(fw-shipped-m) $(fw-shipped-)
+
+quiet_cmd_copy  = COPY    $@
+      cmd_copy  = cp -u $< $@
 
 quiet_cmd_ihex  = IHEX    $@
       cmd_ihex  = $(OBJCOPY) -Iihex -Obinary $< $@
@@ -233,7 +235,7 @@ quiet_cmd_fwbin = MK_FW   $@
 		  echo "    .section .rodata"				>>$@;\
 		  echo "    .p2align $${ASM_ALIGN}"			>>$@;\
 		  echo "_fw_$${FWSTR}_bin:"				>>$@;\
-		  echo "    .incbin \"$(srctree)/$(2)\""				>>$@;\
+		  echo "    .incbin \"$(srctree)/$(2)\""		>>$@;\
 		  echo "_fw_end:"					>>$@;\
 		  echo "   .section .rodata.str,\"aMS\",$${PROGBITS},1"	>>$@;\
 		  echo "    .p2align $${ASM_ALIGN}"			>>$@;\
@@ -262,6 +264,10 @@ $(patsubst %,$(obj)/%.gen.S, $(fw-external-y)): %: $(wordsize_deps) \
 # The .o files depend on the binaries directly; the .S files don't.
 $(patsubst %,$(obj)/%.gen.o, $(fw-shipped-y)): %.gen.o: %
 $(patsubst %,$(obj)/%.gen.o, $(fw-external-y)): $(obj)/%.gen.o: $(fwdir)/%
+
+# Manufacturers don't like to distribute in ihex, I guess I can't blame them.
+$(obj)/%: $(obj)/%.cp
+	$(call cmd,copy)
 
 # .ihex is used just as a simple way to hold binary files in a source tree
 # where binaries are frowned upon. They are directly converted with objcopy.
