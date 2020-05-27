@@ -106,9 +106,19 @@ static bool zswap_enabled __read_mostly = 1;
 module_param_named(enabled, zswap_enabled, bool, 0444);
 
 /* Compressor to be used by zswap (fixed at boot for now) */
+#ifdef CONFIG_ZSWAP_LZO
 #define ZSWAP_COMPRESSOR_DEFAULT "lzo"
-#define ZSWAP_COMPRESSOR "lz4"
-static char *zswap_compressor = ZSWAP_COMPRESSOR;
+#endif
+
+#ifdef CONFIG_ZSWAP_LZ4
+#define ZSWAP_COMPRESSOR_DEFAULT "lz4"
+#endif
+
+#ifdef CONFIG_ZSWAP_ZSTD
+#define ZSWAP_COMPRESSOR_DEFAULT "zstd"
+#endif
+
+static char *zswap_compressor = ZSWAP_COMPRESSOR_DEFAULT;
 module_param_named(compressor, zswap_compressor, charp, 0444);
 
 /* The maximum rate (1/1000) of memory that the compressed pool can occupy */

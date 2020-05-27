@@ -555,7 +555,6 @@ config MEM_SOFT_DIRTY
 config ZSWAP
 	bool "Compressed cache for swap pages (EXPERIMENTAL)"
 	depends on FRONTSWAP && CRYPTO=y
-	select CRYPTO_LZ4
 	select ZPOOL
 	default n
 	help
@@ -571,6 +570,29 @@ config ZSWAP
 	  interactions don't cause any known issues on simple memory setups,
 	  they have not be fully explored on the large set of potential
 	  configurations and workloads that exist.
+
+choice
+	prompt "zswap compression"
+	depends on ZSWAP
+	default ZSWAP_LZO
+
+config ZSWAP_LZO
+	bool "lz0"
+	select CRYPTO_LZO
+
+config ZSWAP_LZ4HC
+	bool "lz4hc"
+	select CRYPTO_LZ4HC
+
+config ZSWAP_LZ4
+	bool "lz4"
+	select CRYPTO_LZ4
+
+config ZSWAP_ZSTD
+	bool "zstd"
+	select CRYPTO_ZSTD
+
+endchoice
 
 config ZSWAP_ENABLE_WRITEBACK
 	bool "Enable zswap writeback"
