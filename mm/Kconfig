@@ -580,10 +580,6 @@ config ZSWAP_LZO
 	bool "lz0"
 	select CRYPTO_LZO
 
-config ZSWAP_LZ4HC
-	bool "lz4hc"
-	select CRYPTO_LZ4HC
-
 config ZSWAP_LZ4
 	bool "lz4"
 	select CRYPTO_LZ4
