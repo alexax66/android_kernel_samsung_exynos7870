@@ -1460,7 +1460,7 @@ static void zswap_frontswap_invalidate_area(unsigned type)
 	zswap_trees[type] = NULL;
 }
 
-static struct zpool_ops zswap_zpool_ops = {
+static const struct zpool_ops zswap_zpool_ops = {
 	.evict = zswap_writeback_entry
 };
 
@@ -1647,5 +1647,5 @@ error:
 late_initcall(init_zswap);
 
 MODULE_LICENSE("GPL");
-MODULE_AUTHOR("Seth Jennings <sjenning@linux.vnet.ibm.com>");
+MODULE_AUTHOR("Seth Jennings <sjennings@variantweb.net>");
 MODULE_DESCRIPTION("Compressed cache for swap pages");
