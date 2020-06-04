@@ -3,7 +3,6 @@
 export ARCH=arm64
 export CROSS_COMPILE=~/build/toolchain/gcc-linaro-7.5.0-linux-gnu/bin/aarch64-linux-gnu-
 export ANDROID_MAJOR_VERSION=q
-export PLATFORM_VERSION=10.0.0
 
 THREAD=-j$(bc <<< $(grep -c ^processor /proc/cpuinfo)+2)
 
