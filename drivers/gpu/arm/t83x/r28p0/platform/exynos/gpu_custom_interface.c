@@ -62,7 +62,7 @@
 
 #ifdef CONFIG_SOC_EXYNOS7870
 #define GPU_MAX_VOLT		1200000
-#define GPU_MIN_VOLT		800000
+#define GPU_MIN_VOLT		600000
 #define GPU_VOLT_STEP		6250
 #else
 #error "Please define gpu voltage ranges for current SoC."
@@ -814,6 +814,98 @@ static ssize_t set_gpu_throttling4(struct device *dev, struct device_attribute *
 	}
 
 	platform->tmu_lock_clk[THROTTLING4] = throttling4;
+
+	return count;
+}
+
+static ssize_t show_gpu_throttling5(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	ssize_t ret = 0;
+	struct exynos_context *platform = (struct exynos_context *)pkbdev->platform_context;
+
+	if (!platform)
+		return -ENODEV;
+
+	ret += snprintf(buf+ret, PAGE_SIZE-ret, "%d", platform->tmu_lock_clk[THROTTLING5]);
+
+	if (ret < PAGE_SIZE - 1) {
+		ret += snprintf(buf+ret, PAGE_SIZE-ret, "\n");
+	} else {
+		buf[PAGE_SIZE-2] = '\n';
+		buf[PAGE_SIZE-1] = '\0';
+		ret = PAGE_SIZE-1;
+	}
+
+	return ret;
+}
+
+static ssize_t set_gpu_throttling5(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+	int ret, throttling5;
+	struct exynos_context *platform = (struct exynos_context *)pkbdev->platform_context;
+
+	if (!platform)
+		return -ENODEV;
+
+	ret = kstrtoint(buf, 0, &throttling5);
+
+	if (ret) {
+		GPU_LOG(DVFS_WARNING, DUMMY, 0u, 0u, "%s: invalid value\n", __func__);
+		return -ENOENT;
+	}
+
+	if ((throttling5< platform->gpu_min_clock_limit) || (throttling5> platform->gpu_max_clock_limit)) {
+		GPU_LOG(DVFS_WARNING, DUMMY, 0u, 0u, "%s: out of range (%d)\n", __func__, throttling5);
+		return -ENOENT;
+	}
+
+	platform->tmu_lock_clk[THROTTLING5] = throttling5;
+
+	return count;
+}
+
+static ssize_t show_gpu_throttling6(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	ssize_t ret = 0;
+	struct exynos_context *platform = (struct exynos_context *)pkbdev->platform_context;
+
+	if (!platform)
+		return -ENODEV;
+
+	ret += snprintf(buf+ret, PAGE_SIZE-ret, "%d", platform->tmu_lock_clk[THROTTLING6]);
+
+	if (ret < PAGE_SIZE - 1) {
+		ret += snprintf(buf+ret, PAGE_SIZE-ret, "\n");
+	} else {
+		buf[PAGE_SIZE-2] = '\n';
+		buf[PAGE_SIZE-1] = '\0';
+		ret = PAGE_SIZE-1;
+	}
+
+	return ret;
+}
+
+static ssize_t set_gpu_throttling6(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+	int ret, throttling6;
+	struct exynos_context *platform = (struct exynos_context *)pkbdev->platform_context;
+
+	if (!platform)
+		return -ENODEV;
+
+	ret = kstrtoint(buf, 0, &throttling6);
+
+	if (ret) {
+		GPU_LOG(DVFS_WARNING, DUMMY, 0u, 0u, "%s: invalid value\n", __func__);
+		return -ENOENT;
+	}
+
+	if ((throttling6< platform->gpu_min_clock_limit) || (throttling6> platform->gpu_max_clock_limit)) {
+		GPU_LOG(DVFS_WARNING, DUMMY, 0u, 0u, "%s: out of range (%d)\n", __func__, throttling6);
+		return -ENOENT;
+	}
+
+	platform->tmu_lock_clk[THROTTLING6] = throttling6;
 
 	return count;
 }
@@ -1948,6 +2040,8 @@ DEVICE_ATTR(throttling1, S_IRUGO|S_IWUSR, show_gpu_throttling1, set_gpu_throttli
 DEVICE_ATTR(throttling2, S_IRUGO|S_IWUSR, show_gpu_throttling2, set_gpu_throttling2);
 DEVICE_ATTR(throttling3, S_IRUGO|S_IWUSR, show_gpu_throttling3, set_gpu_throttling3);
 DEVICE_ATTR(throttling4, S_IRUGO|S_IWUSR, show_gpu_throttling4, set_gpu_throttling4);
+DEVICE_ATTR(throttling5, S_IRUGO|S_IWUSR, show_gpu_throttling5, set_gpu_throttling5);
+DEVICE_ATTR(throttling6, S_IRUGO|S_IWUSR, show_gpu_throttling6, set_gpu_throttling6);
 DEVICE_ATTR(tripping, S_IRUGO|S_IWUSR, show_gpu_tripping, set_gpu_tripping);
 DEVICE_ATTR(tmu, S_IRUGO|S_IWUSR, show_tmu, set_tmu_control);
 #ifdef CONFIG_CPU_THERMAL_IPA
@@ -2420,7 +2514,7 @@ static struct kobj_attribute gpu_freq_table_attribute =
 
 static struct kobj_attribute gpu_driver_version_attribute =
 	__ATTR(gpu_driver_version, S_IRUGO, show_kernel_sysfs_gpu_driver_version, NULL);
-	
+
 static struct kobj_attribute gpu_model_attribute =
 	__ATTR(gpu_model, S_IRUGO, show_kernel_sysfs_gpu_model, NULL);
 
@@ -2591,6 +2685,16 @@ int gpu_create_sysfs_file(struct device *dev)
 		goto out;
 	}
 
+	if (device_create_file(dev, &dev_attr_throttling5)) {
+		GPU_LOG(DVFS_ERROR, DUMMY, 0u, 0u, "couldn't create sysfs file [throttling5]\n");
+		goto out;
+	}
+
+	if (device_create_file(dev, &dev_attr_throttling6)) {
+		GPU_LOG(DVFS_ERROR, DUMMY, 0u, 0u, "couldn't create sysfs file [throttling6]\n");
+		goto out;
+	}
+
 	if (device_create_file(dev, &dev_attr_tripping)) {
 		GPU_LOG(DVFS_ERROR, DUMMY, 0u, 0u, "couldn't create sysfs file [tripping]\n");
 		goto out;
@@ -2716,6 +2820,8 @@ void gpu_remove_sysfs_file(struct device *dev)
 	device_remove_file(dev, &dev_attr_throttling2);
 	device_remove_file(dev, &dev_attr_throttling3);
 	device_remove_file(dev, &dev_attr_throttling4);
+	device_remove_file(dev, &dev_attr_throttling5);
+	device_remove_file(dev, &dev_attr_throttling6);
 	device_remove_file(dev, &dev_attr_tripping);
 	device_remove_file(dev, &dev_attr_tmu);
 #ifdef CONFIG_CPU_THERMAL_IPA

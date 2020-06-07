@@ -253,6 +253,8 @@ static int gpu_validate_attrib_data(struct exynos_context *platform)
 	platform->tmu_lock_clk[THROTTLING4] = data == 0 ? 266 : (u32) data;
 	data = gpu_get_attrib_data(attrib, GPU_TEMP_THROTTLING5);
 	platform->tmu_lock_clk[THROTTLING5] = data == 0 ? 266 : (u32) data;
+	data = gpu_get_attrib_data(attrib, GPU_TEMP_THROTTLING6);
+	platform->tmu_lock_clk[THROTTLING6] = data == 0 ? 266 : (u32) data;
 	data = gpu_get_attrib_data(attrib, GPU_TEMP_TRIPPING);
 	platform->tmu_lock_clk[TRIPPING] = data == 0 ? 266 : (u32) data;
 
