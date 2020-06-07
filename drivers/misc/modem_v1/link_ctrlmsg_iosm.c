@@ -86,7 +86,7 @@ static struct workqueue_struct *iosm_wq;
 static struct mutex iosm_mtx;
 static atomic_t mdm_ready;
 
-static const char const *tx_iosm_str[] = {
+static const char *tx_iosm_str[] = {
 	[IOSM_A2C_AP_READY] = "AP_READY",
 	[IOSM_A2C_CONF_CH_REQ] = "CONF_CH_REQ",
 	[IOSM_A2C_OPEN_CH] = "OPEN_CH",

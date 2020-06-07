@@ -796,7 +796,6 @@ static int alloc_tx_buffer(struct eth_dev *dev)
 						GFP_ATOMIC);
 			if (!req->buf)
 				goto free_buf;
-		}
 #ifdef CONFIG_USB_NCM_ACCUMULATE_MULTPKT
 			if(dev->port_usb->is_fixed) {
 				memcpy(req->buf,dev->port_usb->header,dev->port_usb->header_len);
@@ -804,7 +803,9 @@ static int alloc_tx_buffer(struct eth_dev *dev)
 				DEBUG_NCM(KERN_ERR"usb: request(%p) req->len(%d) \n",req,req->length);
 			}
 #endif
+		}
 	}
+
 	return 0;
 
 free_buf:
