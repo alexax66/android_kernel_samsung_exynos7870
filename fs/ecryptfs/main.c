@@ -49,7 +49,7 @@
 #endif
 
 #if defined(CONFIG_FMP_ECRYPT_FS)
-#include "sdcardfs.h"
+#include "../sdcardfs/sdcardfs.h"
 #endif
 
 /**

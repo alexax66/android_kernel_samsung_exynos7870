@@ -41,7 +41,7 @@
 #include "ecryptfs_sdp_chamber.h"
 #include "ecryptfs_dek.h"
 #if (ANDROID_VERSION < 80000)
-#include "sdcardfs.h"
+#include "../sdcardfs/sdcardfs.h"
 #endif
 
 #endif
