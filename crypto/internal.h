@@ -79,7 +79,7 @@ bool in_fips_err(void);
 void set_in_fips_err(void);
 void crypto_init_proc(int *fips_error);
 int do_integrity_check(void);
-int testmgr_crypto_proc_init(void);
+int __init testmgr_crypto_proc_init(void);
 #else
 void __init crypto_init_proc(void);
 #endif
