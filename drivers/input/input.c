@@ -29,7 +29,8 @@
 #include <linux/rcupdate.h>
 #include "input-compat.h"
 
-#if !defined(CONFIG_INPUT_BOOSTER) // Input Booster +
+#if defined(CONFIG_INPUT_BOOSTER) // Input Booster +
+#undef CONFIG_INPUT_BOOSTER
 #include <linux/input/input.h>
 #endif // Input Booster -
 
@@ -408,7 +409,7 @@ static void input_handle_event(struct input_dev *dev,
 }
 
 
-#if !defined(CONFIG_INPUT_BOOSTER) // Input Booster +
+#if defined(CONFIG_INPUT_BOOSTER) // Input Booster +
 // ********** Define Timeout Functions ********** //
 DECLARE_TIMEOUT_FUNC(touch);
 DECLARE_TIMEOUT_FUNC(multitouch);
@@ -844,7 +845,7 @@ void input_event(struct input_dev *dev,
 		input_handle_event(dev, type, code, value);
 		spin_unlock_irqrestore(&dev->event_lock, flags);
 
-#if !defined(CONFIG_INPUT_BOOSTER) // Input Booster +
+#if defined(CONFIG_INPUT_BOOSTER) // Input Booster +
 		if(device_tree_infor != NULL) {
 			if (type == EV_SYN && input_count > 0) {
 				pr_debug("[Input Booster1] ==============================================\n");
@@ -2903,7 +2904,7 @@ static int __init input_init(void)
 		goto fail2;
 	}
 
-#if !defined(CONFIG_INPUT_BOOSTER) // Input Booster +
+#if defined(CONFIG_INPUT_BOOSTER) // Input Booster +
 	input_booster_init();
 #endif  // Input Booster -
 
