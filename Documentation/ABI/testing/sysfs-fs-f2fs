@@ -51,12 +51,6 @@ Description:
 		 Controls the dirty page count condition for the in-place-update
 		 policies.
 
-What:		/sys/fs/f2fs/<disk>/min_ssr_sections
-Date:		October 2017
-Contact:	"Chao Yu" <yuchao0@huawei.com>
-Description:
-		 Controls the fee section threshold to trigger SSR allocation.
-
 What:		/sys/fs/f2fs/<disk>/min_seq_blocks
 Date:		August 2018
 Contact:	"Jaegeuk Kim" <jaegeuk@kernel.org>
@@ -70,6 +64,12 @@ Date:		March 2017
 Contact:	"Jaegeuk Kim" <jaegeuk@kernel.org>
 Description:
 		 Controls the dirty page count condition for redefining hot data.
+
+What:		/sys/fs/f2fs/<disk>/min_ssr_sections
+Date:		October 2017
+Contact:	"Chao Yu" <yuchao0@huawei.com>
+Description:
+		 Controls the fee section threshold to trigger SSR allocation.
 
 What:		/sys/fs/f2fs/<disk>/max_small_discards
 Date:		November 2013
@@ -243,3 +243,11 @@ Description:
 		 - Del: echo '[h/c]!extension' > /sys/fs/f2fs/<disk>/extension_list
 		 - [h] means add/del hot file extension
 		 - [c] means add/del cold file extension
+
+What:		/sys/fs/f2fs/<disk>/unusable
+Date		April 2019
+Contact:	"Daniel Rosenberg" <drosen@google.com>
+Description:
+		If checkpoint=disable, it displays the number of blocks that are unusable.
+                If checkpoint=enable it displays the enumber of blocks that would be unusable
+                if checkpoint=disable were to be set.
