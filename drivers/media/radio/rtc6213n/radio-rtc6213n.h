@@ -3,7 +3,9 @@
  *
  *  Driver for Richwave RTC6213N FM Tuner
  *
- * Copyright (c) 2013 Richwave Technology Co.Ltd
+ *  Copyright (c) 2009 Tobias Lorenz <tobias.lorenz@gmx.net>
+ *  Copyright (c) 2012 Hans de Goede <hdegoede@redhat.com>
+ *  Copyright (c) 2013 Richwave Technology Co.Ltd
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -16,13 +18,10 @@
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 /* driver definitions */
-/* #define _CHECKIRQGPIO */
-/* #define _RDSDEBUG */
 #define DRIVER_NAME "rtc6213n-fmtuner"
 
 /* kernel includes */
@@ -38,10 +37,6 @@
 #include <linux/wait.h>
 #include <media/v4l2-common.h>
 #include <media/v4l2-ioctl.h>
-#include <media/v4l2-ctrls.h>
-#include <media/v4l2-event.h>
-#include <media/v4l2-device.h>
-#include <media/v4l2-dev.h>
 #include <asm/unaligned.h>
 #include <linux/interrupt.h>
 #include <linux/of_gpio.h>
@@ -142,53 +137,59 @@
 #define BD_DATA                     15      /* Block D data */
 #define RDSD_RDSD                   0xffff  /* [15:00] RDS Block D Data */
 
-#define RW_PRIBASE	(V4L2_CID_USER_BASE | 0xf000)
+/* (V4L2_CID_PRIVATE_BASE + (<Register> << 4) + (<Bit Position> << 0)) */
+/* already defined in <linux/videodev2.h> */
+/* #define V4L2_CID_PRIVATE_BASE        0x08000000 */
 
-#define V4L2_CID_PRIVATE_CSR0_ENABLE    (RW_PRIBASE + (DEVICEID<<4) + 1)
-#define V4L2_CID_PRIVATE_CSR0_DISABLE   (RW_PRIBASE + (DEVICEID<<4) + 2)
-#define V4L2_CID_PRIVATE_DEVICEID       (RW_PRIBASE + (DEVICEID<<4) + 3)
+#define RW_PRIBASE	V4L2_CID_PRIVATE_BASE
+/* #define RTC6213N_IOC_POWERUP	(RW_PRIBASE + (POWERCFG<<4) + 15)
+ * #define RTC6213N_IOC_POWERDOWN	(RW_PRIBASE + (POWERCFG<<4) + 14)
+ */
 
-#define V4L2_CID_PRIVATE_CSR0_DIS_SMUTE (RW_PRIBASE + (DEVICEID<<4) + 4)
-#define V4L2_CID_PRIVATE_CSR0_DIS_MUTE  (RW_PRIBASE + (DEVICEID<<4) + 5)
-#define V4L2_CID_PRIVATE_CSR0_DEEM      (RW_PRIBASE + (DEVICEID<<4) + 6)
-#define V4L2_CID_PRIVATE_CSR0_BLNDADJUST (RW_PRIBASE + (DEVICEID<<4) + 7)
-#define V4L2_CID_PRIVATE_CSR0_VOLUME    (RW_PRIBASE + (DEVICEID<<4) + 8)
+#define V4L2_CID_PRIVATE_DEVICEID		(RW_PRIBASE + (DEVICEID<<4) + 0)
+#define V4L2_CID_PRIVATE_CSR0_DIS_SMUTE	(RW_PRIBASE + (MPXCFG<<4) + 15)
+#define V4L2_CID_PRIVATE_CSR0_DEEM		(RW_PRIBASE + (MPXCFG<<4) + 12)
+#define V4L2_CID_PRIVATE_CSR0_BLNDADJUST (RW_PRIBASE + (MPXCFG<<4) + 8)
 
-#define V4L2_CID_PRIVATE_CSR0_BAND      (RW_PRIBASE + (DEVICEID<<4) + 9)
-#define V4L2_CID_PRIVATE_CSR0_CHSPACE   (RW_PRIBASE + (DEVICEID<<4) + 10)
+#define V4L2_CID_PRIVATE_CSR0_BAND		(RW_PRIBASE + (CHANNEL<<4) + 12)
+#define V4L2_CID_PRIVATE_CSR0_CHSPACE	(RW_PRIBASE + (CHANNEL<<4) + 10)
 
-#define V4L2_CID_PRIVATE_CSR0_DIS_AGC   (RW_PRIBASE + (DEVICEID<<4) + 11)
-#define V4L2_CID_PRIVATE_CSR0_RDS_EN    (RW_PRIBASE + (DEVICEID<<4) + 12)
+#define V4L2_CID_PRIVATE_CSR0_DIS_AGC	(RW_PRIBASE + (SYSCFG<<4) + 13)
+#define V4L2_CID_PRIVATE_CSR0_RDS_EN	(RW_PRIBASE + (SYSCFG<<4) + 12)
 
-#define V4L2_CID_PRIVATE_SEEK_CANCEL    (RW_PRIBASE + (DEVICEID<<4) + 13)
+#define V4L2_CID_PRIVATE_SEEK_CANCEL	(RW_PRIBASE + (SEEKCFG1<<4) + 10)
+#define V4L2_CID_PRIVATE_CSR0_SEEKRSSITH (RW_PRIBASE + (SEEKCFG1<<4) + 0)
 
-#define V4L2_CID_PRIVATE_CSR0_SEEKRSSITH (RW_PRIBASE + (DEVICEID<<4) + 14)
-#define V4L2_CID_PRIVATE_CSR0_OFSTH     (RW_PRIBASE + (DEVICEID<<4) + 15)
-#define V4L2_CID_PRIVATE_CSR0_QLTTH     (RW_PRIBASE + (CHIPID<<4) + 0)
-#define V4L2_CID_PRIVATE_RSSI           (RW_PRIBASE + (CHIPID<<4) + 1)
+#define V4L2_CID_PRIVATE_CSR0_OFSTH		(RW_PRIBASE + (SEEKCFG2<<4) + 7)
+#define V4L2_CID_PRIVATE_CSR0_QLTTH		(RW_PRIBASE + (SEEKCFG2<<4) + 0)
+#define V4L2_CID_PRIVATE_RDS_RDY	    (RW_PRIBASE + (STATUS<<4) + 15)
+#define V4L2_CID_PRIVATE_STD	        (RW_PRIBASE + (STATUS<<4) + 14)
+#define V4L2_CID_PRIVATE_SF		        (RW_PRIBASE + (STATUS<<4) + 13)
+#define V4L2_CID_PRIVATE_RDS_SYNC		(RW_PRIBASE + (STATUS<<4) + 11)
+#define V4L2_CID_PRIVATE_SI		        (RW_PRIBASE + (STATUS<<4) + 10)
 
-#define V4L2_CID_PRIVATE_RDS_RDY        (RW_PRIBASE + (CHIPID<<4) + 2)
-#define V4L2_CID_PRIVATE_STD            (RW_PRIBASE + (CHIPID<<4) + 3)
-#define V4L2_CID_PRIVATE_SF	            (RW_PRIBASE + (CHIPID<<4) + 4)
-#define V4L2_CID_PRIVATE_RDS_SYNC	    (RW_PRIBASE + (CHIPID<<4) + 5)
-#define V4L2_CID_PRIVATE_SI	            (RW_PRIBASE + (CHIPID<<4) + 6)
+#define V4L2_CID_PRIVATE_RSSI			(RW_PRIBASE + (RSSI<<4) + 0)
 
+#define INIT_COMPLETION(x) ((x).done = 0)
 #define WAIT_OVER			0
 #define SEEK_WAITING		1
 #define NO_WAIT				2
 #define TUNE_WAITING		4
 #define RDS_WAITING			5
 #define SEEK_CANCEL			6
+
+#define VOLUME_NUM 16
+
 /**************************************************************************
  * General Driver Definitions
  **************************************************************************/
+
 /*
  * rtc6213n_device - private data
  */
 struct rtc6213n_device {
-	struct v4l2_device v4l2_dev;
-	struct video_device videodev;
-	struct v4l2_ctrl_handler ctrl_handler;
+	struct video_device *videodev;
+
 	/* driver management */
 	unsigned int users;
 
@@ -197,7 +198,7 @@ struct rtc6213n_device {
 
 	/* RDS receive buffer */
 	wait_queue_head_t read_queue;
-	struct mutex lock;      /* buffer locking */
+	struct mutex lock;			/* buffer locking */
 	unsigned char *buffer;      /* size is always multiple of three */
 	unsigned int buf_size;
 	unsigned int rd_index;
@@ -207,13 +208,13 @@ struct rtc6213n_device {
 	bool stci_enabled;      /* Seek/Tune Complete Interrupt */
 
 	struct i2c_client *client;
-	unsigned int tuner_state;
+	bool vol_db;
+	int rx_vol[VOLUME_NUM];
+	unsigned char blend_level;
+	unsigned int seekcfg2;
+	unsigned int blend_ofs;
+	int fmlna_gpio;
 };
-
-/**************************************************************************
- * Firmware Versions
- **************************************************************************/
-#define RADIO_FW_VERSION    15
 
 /**************************************************************************
  * Frequency Multiplicator
@@ -226,9 +227,6 @@ struct rtc6213n_device {
  **************************************************************************/
 extern struct i2c_driver rtc6213n_i2c_driver;
 extern struct video_device rtc6213n_viddev_template;
-extern const struct v4l2_ioctl_ops rtc6213n_ioctl_ops;
-extern const struct v4l2_ctrl_ops rtc6213n_ctrl_ops;
-
 extern struct tasklet_struct my_tasklet;
 extern int rtc6213n_wq_flag;
 extern wait_queue_head_t rtc6213n_wq;
@@ -238,14 +236,11 @@ extern int rtc6213n_set_register(struct rtc6213n_device *radio, int regnr);
 extern int rtc6213n_set_serial_registers(struct rtc6213n_device *radio,
 	u16 *data, int bytes);
 int rtc6213n_i2c_init(void);
-int rtc6213n_reset_rds_data(struct rtc6213n_device *radio);
 int rtc6213n_disconnect_check(struct rtc6213n_device *radio);
 int rtc6213n_set_freq(struct rtc6213n_device *radio, unsigned int freq);
 int rtc6213n_start(struct rtc6213n_device *radio);
 int rtc6213n_stop(struct rtc6213n_device *radio);
 int rtc6213n_fops_open(struct file *file);
-int rtc6213n_power_up(struct rtc6213n_device *radio);
-int rtc6213n_power_down(struct rtc6213n_device *radio);
 int rtc6213n_fops_release(struct file *file);
 int rtc6213n_vidioc_querycap(struct file *file, void *priv,
 	struct v4l2_capability *capability);

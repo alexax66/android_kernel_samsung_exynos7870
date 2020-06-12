@@ -3,7 +3,9 @@
  *
  * I2C driver for Richwave RTC6213N FM Tuner
  *
- * Copyright (c) 2013 Richwave Technology Co.Ltd
+ *  Copyright (c) 2009 Tobias Lorenz <tobias.lorenz@gmx.net>
+ *  Copyright (c) 2012 Hans de Goede <hdegoede@redhat.com>
+ *  Copyright (c) 2013 Richwave Technology Co.Ltd
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -16,8 +18,7 @@
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 /* kernel includes */
@@ -25,6 +26,9 @@
 #include <linux/slab.h>
 #include <linux/delay.h>
 #include <linux/jiffies.h>
+#include <linux/of_gpio.h>
+#include <media/v4l2-device.h>
+#include <media/v4l2-ioctl.h>
 #include "radio-rtc6213n.h"
 
 static struct of_device_id rtc6213n_i2c_dt_ids[] = {
@@ -41,6 +45,9 @@ static const struct i2c_device_id rtc6213n_i2c_id[] = {
 };
 MODULE_DEVICE_TABLE(i2c, rtc6213n_i2c_id);
 
+static unsigned short space = 1;
+static unsigned short band;
+static unsigned short de;
 
 /**************************************************************************
  * Module Parameters
@@ -59,195 +66,13 @@ MODULE_PARM_DESC(rds_buf, "RDS buffer entries: *100*");
 /* RDS maximum block errors */
 static unsigned short max_rds_errors = 1;
 /* 0 means   0  errors requiring correction */
-/* 1 means 1-2  errors requiring correction (used by original USBRadio.exe) */
+/* 1 means 1-2  errors requiring correction */
 /* 2 means 3-5  errors requiring correction */
 /* 3 means   6+ errors or errors in checkword, correction not possible */
 module_param(max_rds_errors, ushort, 0644);
 MODULE_PARM_DESC(max_rds_errors, "RDS maximum block errors: *1*");
 
-enum rtc6213n_ctrl_id {
-	RTC6213N_ID_CSR0_ENABLE,
-	RTC6213N_ID_CSR0_DISABLE,
-	RTC6213N_ID_DEVICEID,
-	RTC6213N_ID_CSR0_DIS_SMUTE,
-	RTC6213N_ID_CSR0_DIS_MUTE,
-	RTC6213N_ID_CSR0_DEEM,
-	RTC6213N_ID_CSR0_BLNDADJUST,
-	RTC6213N_ID_CSR0_VOLUME,
-	RTC6213N_ID_CSR0_BAND,
-	RTC6213N_ID_CSR0_CHSPACE,
-	RTC6213N_ID_CSR0_DIS_AGC,
-	RTC6213N_ID_CSR0_RDS_EN,
-	RTC6213N_ID_SEEK_CANCEL,
-	RTC6213N_ID_CSR0_SEEKRSSITH,
-	RTC6213N_ID_CSR0_OFSTH,
-	RTC6213N_ID_CSR0_QLTTH,
-	RTC6213N_ID_RSSI,
-	RTC6213N_ID_RDS_RDY,
-	RTC6213N_ID_STD,
-	RTC6213N_ID_SF,
-	RTC6213N_ID_RDS_SYNC,
-	RTC6213N_ID_SI,
-};
 
-static struct v4l2_ctrl_config rtc6213n_ctrls[] = {
-	[RTC6213N_ID_CSR0_ENABLE] = {
-		.ops	= &rtc6213n_ctrl_ops,
-		.id		= V4L2_CID_PRIVATE_CSR0_ENABLE,
-		.type	= V4L2_CTRL_TYPE_BOOLEAN,
-		.name	= "CSR0_ENABLE",
-		.min	= 0,
-		.max	= 1,
-		.step	= 1,
-	},
-	[RTC6213N_ID_CSR0_DISABLE] = {
-		.ops	= &rtc6213n_ctrl_ops,
-		.id		= V4L2_CID_PRIVATE_CSR0_DISABLE,
-		.type	= V4L2_CTRL_TYPE_BOOLEAN,
-		.name	= "CSR0_DISABLE",
-		.min	= 0,
-		.max	= 1,
-		.step	= 1,
-	},
-	[RTC6213N_ID_DEVICEID] = {
-		.ops	= &rtc6213n_ctrl_ops,
-		.id		= V4L2_CID_PRIVATE_DEVICEID,
-		.type	= V4L2_CTRL_TYPE_INTEGER,
-		.name	= "DEVICEID",
-		.min	= 0,
-		.max	= 255,
-		.step	= 1,
-	},
-	[RTC6213N_ID_CSR0_DIS_SMUTE] = {
-		.ops	= &rtc6213n_ctrl_ops,
-		.id		= V4L2_CID_PRIVATE_CSR0_DIS_SMUTE,
-		.type	= V4L2_CTRL_TYPE_INTEGER,
-		.name	= "CSR0_DIS_SMUTE",
-		.min    = 0,
-		.max    = 1,
-		.step   = 1,
-	},
-	[RTC6213N_ID_CSR0_DIS_MUTE] = {
-		.ops	= &rtc6213n_ctrl_ops,
-		.id		= V4L2_CID_PRIVATE_CSR0_DIS_MUTE,
-		.type	= V4L2_CTRL_TYPE_BOOLEAN,
-		.name	= "CSR0_DIS_MUTE",
-		.min    = 0,
-		.max    = 1,
-		.step   = 1,
-	},
-	[RTC6213N_ID_CSR0_DEEM] = {
-		.ops	= &rtc6213n_ctrl_ops,
-		.id		= V4L2_CID_PRIVATE_CSR0_DEEM,
-		.type	= V4L2_CTRL_TYPE_BOOLEAN,
-		.name	= "CSR0_DEEM",
-		.min	= 0,
-		.max	= 1,
-		.step	= 1,
-	},
-	[RTC6213N_ID_CSR0_BLNDADJUST] = {
-		.ops	= &rtc6213n_ctrl_ops,
-		.id		= V4L2_CID_PRIVATE_CSR0_BLNDADJUST,
-		.type	= V4L2_CTRL_TYPE_INTEGER,
-		.name	= "CSR0_BLNDADJUST",
-		.min	= 0,
-		.max	= 15,
-		.step	= 1,
-	},
-	[RTC6213N_ID_CSR0_VOLUME] = {
-		.ops	= &rtc6213n_ctrl_ops,
-		.id		= V4L2_CID_PRIVATE_CSR0_VOLUME,
-		.type	= V4L2_CTRL_TYPE_INTEGER,
-		.name	= "CSR0_VOLUME",
-		.min    = 0,
-		.max    = 15,
-		.step   = 1,
-	},
-	[RTC6213N_ID_CSR0_BAND] = {
-		.ops	= &rtc6213n_ctrl_ops,
-		.id		= V4L2_CID_PRIVATE_CSR0_BAND,
-		.type	= V4L2_CTRL_TYPE_INTEGER,
-		.name	= "CSR0_BAND",
-		.min	= 0,
-		.max	= 3,
-		.step	= 1,
-		},
-	[RTC6213N_ID_CSR0_CHSPACE] = {
-		.ops	= &rtc6213n_ctrl_ops,
-		.id		= V4L2_CID_PRIVATE_CSR0_CHSPACE,
-		.type	= V4L2_CTRL_TYPE_INTEGER,
-		.name	= "CSR0_CHSPACE",
-		.min	= 0,
-		.max	= 3,
-		.step	= 1,
-		},
-	[RTC6213N_ID_CSR0_DIS_AGC] = {
-		.ops	= &rtc6213n_ctrl_ops,
-		.id		= V4L2_CID_PRIVATE_CSR0_DIS_AGC,
-		.type	= V4L2_CTRL_TYPE_BOOLEAN,
-		.name	= "CSR0_DIS_AGC",
-		.min	= 0,
-		.max	= 1,
-		.step	= 1,
-	},
-	[RTC6213N_ID_CSR0_RDS_EN] = {
-		.ops	= &rtc6213n_ctrl_ops,
-		.id		= V4L2_CID_PRIVATE_CSR0_RDS_EN,
-		.type	= V4L2_CTRL_TYPE_BOOLEAN,
-		.name	= "CSR0_RDS_EN",
-		.min	= 0,
-		.max	= 1,
-		.step	= 1,
-	},
-	[RTC6213N_ID_SEEK_CANCEL] = {
-		.ops	= &rtc6213n_ctrl_ops,
-		.id		= V4L2_CID_PRIVATE_SEEK_CANCEL,
-		.type	= V4L2_CTRL_TYPE_BOOLEAN,
-		.name	= "SEEK_CANCEL",
-		.min	= 0,
-		.max	= 1,
-		.step	= 1,
-	},
-	[RTC6213N_ID_CSR0_SEEKRSSITH] = {
-		.ops	= &rtc6213n_ctrl_ops,
-		.id		= V4L2_CID_PRIVATE_CSR0_SEEKRSSITH,
-		.type	= V4L2_CTRL_TYPE_INTEGER,
-		.name	= "CSR0_SEEKRSSITH",
-		.min	= 0,
-		.max	= 255,
-		.step	= 1,
-	},
-	[RTC6213N_ID_CSR0_OFSTH] = {
-		.ops	= &rtc6213n_ctrl_ops,
-		.id		= V4L2_CID_PRIVATE_CSR0_OFSTH,
-		.type	= V4L2_CTRL_TYPE_INTEGER,
-		.name	= "CSR0_OFSTH",
-		.def    = 64,
-		.min	= 0,
-		.max	= 255,
-		.step	= 1,
-	},
-	[RTC6213N_ID_CSR0_QLTTH] = {
-		.ops	= &rtc6213n_ctrl_ops,
-		.id		= V4L2_CID_PRIVATE_CSR0_QLTTH,
-		.type	= V4L2_CTRL_TYPE_INTEGER,
-		.name	= "CSR0_QLTTH",
-		.def    = 80,
-		.min	= 0,
-		.max	= 255,
-		.step	= 1,
-	},
-	[RTC6213N_ID_RSSI] = {
-		.ops	= &rtc6213n_ctrl_ops,
-		.id		= V4L2_CID_PRIVATE_RSSI,
-		.type	= V4L2_CTRL_TYPE_INTEGER,
-		.name	= "CSR0_SEEKRSSITH",
-		.flags  = V4L2_CTRL_FLAG_VOLATILE,
-		.min	= 0,
-		.max	= 255,
-		.step	= 1,
-	},
-};
 
 /**************************************************************************
  * I2C Definitions
@@ -259,8 +84,6 @@ static struct v4l2_ctrl_config rtc6213n_ctrls[] = {
 /* Read starts with the upper byte of register 0x0a */
 #define READ_REG_NUM        RADIO_REGISTER_NUM
 #define READ_INDEX(i)       ((i + RADIO_REGISTER_NUM - 0x0a) % READ_REG_NUM)
-static int rtc6213n_radio_add_new_custom(struct rtc6213n_device *radio,
-	enum rtc6213n_ctrl_id id);
 
 /*static*/
 struct tasklet_struct my_tasklet;
@@ -303,8 +126,13 @@ int rtc6213n_set_register(struct rtc6213n_device *radio, int regnr)
 	for (i = 0; i < WRITE_REG_NUM; i++)
 		buf[i] = __cpu_to_be16(radio->registers[WRITE_INDEX(i)]);
 
-	if (i2c_transfer(radio->client->adapter, msgs, 1) != 1)
+	if (i2c_transfer(radio->client->adapter, msgs, 1) != 1) {
+		for (i = 0; i < WRITE_REG_NUM; i++) {
+			dev_err(&radio->videodev->dev, " %s buf[%d] = %d\n",
+						__func__, i, buf[i]);
+		}
 		return -EIO;
+	}
 
 	return 0;
 }
@@ -325,8 +153,13 @@ int rtc6213n_set_serial_registers(struct rtc6213n_device *radio,
 	for (i = 0; i < bytes; i++)
 		buf[i] = __cpu_to_be16(data[i]);
 
-	if (i2c_transfer(radio->client->adapter, msgs, 1) != 1)
+	if (i2c_transfer(radio->client->adapter, msgs, 1) != 1) {
+		for (i = 0; i < 46; i++) {
+			dev_err(&radio->videodev->dev, " rtc6213n_set_serial_registers buf[%d] = %d\n",
+						i, buf[i]);
+		}
 		return -EIO;
+	}
 
 	return 0;
 }
@@ -356,36 +189,6 @@ int rtc6213n_get_all_registers(struct rtc6213n_device *radio)
 	return 0;
 }
 
-/*
- * rtc6213n_get_allbanks_registers - read entire registers of each bank
- * in case of need, we keep here
- */
-#if 0
-int rtc6213n_get_allbanks_registers(struct rtc6213n_device *radio)
-{
-	int i;
-	u16 buf[READ_REG_NUM];
-
-	radio->registers[BANKCFG] = 0x4000;
-	retval = rtc6213n_set_register(radio, BANKCFG);
-	if (retval < 0)
-		goto done;
-
-	struct i2c_msg msgs[1] = {
-		{ radio->client->addr, I2C_M_RD, sizeof(u16) * READ_REG_NUM,
-			(void *)buf },
-	};
-
-	if (i2c_transfer(radio->client->adapter, msgs, 1) != 1)
-		return -EIO;
-
-	for (i = 0; i < READ_REG_NUM; i++)
-		radio->registers[i] = __be16_to_cpu(buf[READ_INDEX(i)]);
-
-	return 0;
-}
-#endif
-
 int rtc6213n_disconnect_check(struct rtc6213n_device *radio)
 {
 	return 0;
@@ -401,13 +204,99 @@ int rtc6213n_disconnect_check(struct rtc6213n_device *radio)
 int rtc6213n_fops_open(struct file *file)
 {
 	struct rtc6213n_device *radio = video_drvdata(file);
-	int retval = v4l2_fh_open(file);
+	int retval = 0;
 
-	dev_info(&radio->videodev.dev, "rtc6213n_fops_open radio->handler=%p\n", (void *)&radio->ctrl_handler);
+	mutex_lock(&radio->lock);
+	radio->users++;
 
+	dev_info(&radio->videodev->dev, "%s : user num = %d\n",
+			__func__, radio->users);
 
+	if (radio->users == 1) {
+		/* start radio */
+		retval = rtc6213n_start(radio);
+		if (retval < 0)
+			goto done;
+		dev_info(&radio->videodev->dev, "rtc6213n_fops_open : after initialization\n");
+
+		/* mpxconfig */
+		/* Disable Softmute / Disable Mute / De-emphasis / Volume 8 */
+		radio->registers[MPXCFG] = 0x0000 |
+			MPXCFG_CSR0_DIS_SMUTE | MPXCFG_CSR0_DIS_MUTE |
+			((radio->blend_level << 8) & MPXCFG_CSR0_BLNDADJUST) |
+			((de << 12) & MPXCFG_CSR0_DEEM) | 0x0008;
+		retval = rtc6213n_set_register(radio, MPXCFG);
+		if (retval < 0)
+			goto done;
+
+		/* channel */
+		/* Band / Space / Default channel 90.1Mhz */
+		radio->registers[CHANNEL] =
+			((band  << 12) & CHANNEL_CSR0_BAND)  |
+			((space << 10) & CHANNEL_CSR0_CHSPACE) | 0x1a;
+		retval = rtc6213n_set_register(radio, CHANNEL);
+		if (retval < 0)
+			goto done;
+
+		/* seekconfig2 */
+		/* Seeking TH */
+		radio->registers[SEEKCFG2] = radio->seekcfg2;
+		retval = rtc6213n_set_register(radio, SEEKCFG2);
+		if (retval < 0)
+			goto done;
+
+		/* enable RDS / STC interrupt */
+		radio->registers[SYSCFG] |= SYSCFG_CSR0_RDSIRQEN;
+		radio->registers[SYSCFG] |= SYSCFG_CSR0_STDIRQEN;
+		/*radio->registers[SYSCFG] |= SYSCFG_CSR0_RDS_EN;*/
+		retval = rtc6213n_set_register(radio, SYSCFG);
+		if (retval < 0)
+			goto done;
+
+		radio->registers[PADCFG] &= ~PADCFG_CSR0_GPIO;
+		radio->registers[PADCFG] |= 0x1 << 2;
+		retval = rtc6213n_set_register(radio, PADCFG);
+		if (retval < 0)
+			goto done;
+
+		/* powerconfig */
+		/* Enable FM */
+		radio->registers[POWERCFG] = POWERCFG_CSR0_ENABLE;
+		radio->registers[POWERCFG] |= (radio->blend_ofs << 8);
+		retval = rtc6213n_set_register(radio, POWERCFG);
+		if (retval < 0)
+			goto done;
+
+		dev_info(&radio->videodev->dev, "RTC6213n Tuner1: DeviceID=0x%4.4hx ChipID=0x%4.4hx\n",
+			radio->registers[DEVICEID], radio->registers[CHIPID]);
+		dev_info(&radio->videodev->dev, "RTC6213n Tuner2: Reg2=0x%4.4hx Reg3=0x%4.4hx\n",
+			radio->registers[MPXCFG], radio->registers[CHANNEL]);
+		dev_info(&radio->videodev->dev, "RTC6213n Tuner3: Reg4=0x%4.4hx Reg5=0x%4.4hx\n",
+			radio->registers[SYSCFG], radio->registers[SEEKCFG1]);
+		dev_info(&radio->videodev->dev, "RTC6213n Tuner4: Reg6=0x%4.4hx Reg7=0x%4.4hx\n",
+			radio->registers[POWERCFG], radio->registers[PADCFG]);
+		dev_info(&radio->videodev->dev, "RTC6213n Tuner5: Reg8=0x%4.4hx Reg9=0x%4.4hx\n",
+			radio->registers[8], radio->registers[9]);
+		dev_info(&radio->videodev->dev, "RTC6213n Tuner6: regA=0x%4.4hx RegB=0x%4.4hx\n",
+			radio->registers[10], radio->registers[11]);
+		dev_info(&radio->videodev->dev, "RTC6213n Tuner7: regC=0x%4.4hx RegD=0x%4.4hx\n",
+			radio->registers[12], radio->registers[13]);
+		dev_info(&radio->videodev->dev, "RTC6213n Tuner8: regE=0x%4.4hx RegF=0x%4.4hx\n",
+			radio->registers[14], radio->registers[15]);
+
+		if (radio->fmlna_gpio > 0) {
+			dev_info(&radio->videodev->dev, "enable lna gpio\n");
+			gpio_direction_output(radio->fmlna_gpio, 1);
+		}
+	}
+
+	dev_info(&radio->videodev->dev, "rtc6213n_fops_open : Exit\n");
+
+done:
+	mutex_unlock(&radio->lock);
 	return retval;
 }
+
 
 /*
  * rtc6213n_fops_release - file release
@@ -415,9 +304,28 @@ int rtc6213n_fops_open(struct file *file)
 int rtc6213n_fops_release(struct file *file)
 {
 	struct rtc6213n_device *radio = video_drvdata(file);
-	int retval = v4l2_fh_release(file);
+	int retval = 0;
 
-	dev_info(&radio->videodev.dev, "rtc6213n_fops_release : Exit\n");
+	/* safety check */
+	if (!radio)
+		return -ENODEV;
+
+	mutex_lock(&radio->lock);
+	radio->users--;
+	if (radio->users == 0) {
+		
+		if (radio->fmlna_gpio > 0) {
+			dev_info(&radio->videodev->dev, "disable lna gpio\n");
+			gpio_direction_output(radio->fmlna_gpio, 0);
+		}
+		/* stop radio */
+		retval = rtc6213n_stop(radio);
+		tasklet_kill(&my_tasklet);
+	}
+	mutex_unlock(&radio->lock);
+	dev_info(&radio->videodev->dev, "rtc6213n_fops_release Exit retval = %d\n",
+		retval);
+
 	return retval;
 }
 
@@ -436,8 +344,9 @@ int rtc6213n_vidioc_querycap(struct file *file, void *priv,
 	strlcpy(capability->driver, DRIVER_NAME, sizeof(capability->driver));
 	strlcpy(capability->card, DRIVER_CARD, sizeof(capability->card));
 	capability->version = DRIVER_KERNEL_VERSION;
-	capability->capabilities = V4L2_CAP_HW_FREQ_SEEK |
-		V4L2_CAP_TUNER | V4L2_CAP_RADIO;
+	capability->device_caps = V4L2_CAP_HW_FREQ_SEEK | V4L2_CAP_READWRITE |
+		V4L2_CAP_TUNER | V4L2_CAP_RADIO | V4L2_CAP_RDS_CAPTURE;
+	capability->capabilities = capability->device_caps | V4L2_CAP_DEVICE_CAPS;
 
 	return 0;
 }
@@ -461,14 +370,18 @@ static irqreturn_t rtc6213n_i2c_interrupt(int irq, void *dev_id)
 	unsigned char tmpbuf[3];
 	int retval = 0;
 
+	dev_info(&radio->videodev->dev, "rtc6213n_i2c_interrupt\n");
+
 	/* check Seek/Tune Complete */
 	retval = rtc6213n_get_register(radio, STATUS);
 	if (retval < 0)
 		goto end;
 
+#ifdef CONFIG_RDS
 	retval = rtc6213n_get_register(radio, RSSI);
 	if (retval < 0)
 		goto end;
+#endif
 
 	if ((rtc6213n_wq_flag == SEEK_WAITING) ||
 		(rtc6213n_wq_flag == TUNE_WAITING)) {
@@ -476,12 +389,12 @@ static irqreturn_t rtc6213n_i2c_interrupt(int irq, void *dev_id)
 			rtc6213n_wq_flag = WAIT_OVER;
 			wake_up_interruptible(&rtc6213n_wq);
 			/* ori: complete(&radio->completion); */
-			dev_info(&radio->videodev.dev, "rtc6213n_i2c_interrupt Seek/Tune Done\n");
-			dev_info(&radio->videodev.dev, "STATUS=0x%4.4hx, STD = %d, SF = %d, RSSI = %d\n",
-			radio->registers[STATUS],
-			(radio->registers[STATUS] & STATUS_STD) >> 14,
-			(radio->registers[STATUS] & STATUS_SF) >> 13,
-			(radio->registers[RSSI] & RSSI_RSSI));
+			dev_info(&radio->videodev->dev, "rtc6213n_i2c_interrupt Seek/Tune Done\n");
+			dev_info(&radio->videodev->dev, "STATUS=0x%4.4hx, STD = %d, SF = %d, RSSI = %d\n",
+				radio->registers[STATUS],
+				(radio->registers[STATUS] & STATUS_STD) >> 14,
+				(radio->registers[STATUS] & STATUS_SF) >> 13,
+				(radio->registers[RSSI] & RSSI_RSSI));
 		}
 		goto end;
 	}
@@ -497,26 +410,22 @@ static irqreturn_t rtc6213n_i2c_interrupt(int irq, void *dev_id)
 	if ((radio->registers[STATUS] & STATUS_RDS_RDY) == 0)
 		/* No RDS group ready, better luck next time */
 		goto end;
-	#ifdef _RDSDEBUG
-	dev_info(&radio->videodev.dev, "interrupt : STATUS=0x%4.4hx, RSSI=%d\n",
+	dev_info(&radio->videodev->dev, "interrupt : STATUS=0x%4.4hx, RSSI=%d\n",
 		radio->registers[STATUS], radio->registers[RSSI] & RSSI_RSSI);
-	dev_info(&radio->videodev.dev, "BAErr %d, BBErr %d, BCErr %d, BDErr %d\n",
+	dev_info(&radio->videodev->dev, "BAErr %d, BBErr %d, BCErr %d, BDErr %d\n",
 		(radio->registers[RSSI] & RSSI_RDS_BA_ERRS) >> 14,
 		(radio->registers[RSSI] & RSSI_RDS_BB_ERRS) >> 12,
 		(radio->registers[RSSI] & RSSI_RDS_BC_ERRS) >> 10,
 		(radio->registers[RSSI] & RSSI_RDS_BD_ERRS) >> 8);
-	dev_info(&radio->videodev.dev, "RDS_RDY=%d, RDS_SYNC=%d\n",
+	dev_info(&radio->videodev->dev, "RDS_RDY=%d, RDS_SYNC=%d\n",
 		(radio->registers[STATUS] & STATUS_RDS_RDY) >> 15,
 		(radio->registers[STATUS] & STATUS_RDS_SYNC) >> 11);
-	#endif
-
+#ifdef CONFIG_RDS
 	for (blocknum = 0; blocknum < 5; blocknum++) {
+#else
+	for (blocknum = 0; blocknum < 4; blocknum++) {
+#endif
 		switch (blocknum) {
-		default:
-			bler = (radio->registers[RSSI] &
-					RSSI_RDS_BA_ERRS) >> 14;
-			rds = radio->registers[BA_DATA];
-			break;
 		case 1:
 			bler = (radio->registers[RSSI] &
 					RSSI_RDS_BB_ERRS) >> 12;
@@ -532,9 +441,16 @@ static irqreturn_t rtc6213n_i2c_interrupt(int irq, void *dev_id)
 					RSSI_RDS_BD_ERRS) >> 8;
 			rds = radio->registers[BD_DATA];
 			break;
+#ifdef CONFIG_RDS			
 		case 4:		/* block index 4 for RSSI */
 			bler = 0;
 			rds = radio->registers[RSSI] & RSSI;
+			break;
+#endif
+		default:	/* case 0 */
+			bler = (radio->registers[RSSI] &
+					RSSI_RDS_BA_ERRS) >> 14;
+			rds = radio->registers[BA_DATA];
 			break;
 		};
 
@@ -566,23 +482,8 @@ static irqreturn_t rtc6213n_i2c_interrupt(int irq, void *dev_id)
 		wake_up_interruptible(&radio->read_queue);
 
 end:
-
+	dev_info(&radio->videodev->dev, "rtc6213n_i2c_interrupt end\n");
 	return IRQ_HANDLED;
-}
-
-static int rtc6213n_radio_add_new_custom(struct rtc6213n_device *radio,
-	enum rtc6213n_ctrl_id id)
-{
-	int retval;
-	struct v4l2_ctrl *ctrl;
-
-	ctrl = v4l2_ctrl_new_custom(&radio->ctrl_handler,
-		&rtc6213n_ctrls[id], NULL);
-	retval = radio->ctrl_handler.error;
-	if (ctrl == NULL && retval)
-		dev_err(radio->v4l2_dev.dev, "Could not initialize '%s' control %d\n",
-			rtc6213n_ctrls[id].name, retval);
-	return retval;
 }
 
 /*
@@ -592,28 +493,12 @@ static int rtc6213n_i2c_probe(struct i2c_client *client,
 	const struct i2c_device_id *id)
 {
 	struct rtc6213n_device *radio;
-	struct v4l2_device *v4l2_dev;
-	struct v4l2_ctrl_handler *hdl = NULL;
-	struct device_node *np = client->dev.of_node;
 	int retval = 0;
-
-	/* struct v4l2_ctrl *ctrl; */
-#ifdef _CHECKIRQGPIO
-	/* need to add description "irq-fm" in dts */
-	enum of_gpio_flags irq_flags;
-	int gpio;
+	int fmint_gpio = 0;
 	int irq;
-#endif
-
-	if (!i2c_check_functionality(client->adapter, I2C_FUNC_I2C)) {
-		retval = -ENODEV;
-		goto err_initial;
-	}
-
-	if (!np) {
-		dev_err(&client->dev, "no device tree\n");
-		return -EINVAL;
-	}
+	u32 data[VOLUME_NUM];
+	int i;
+	struct v4l2_device *v4l2_dev;
 
 	/* private data allocation and initialization */
 	radio = kzalloc(sizeof(struct rtc6213n_device), GFP_KERNEL);
@@ -622,151 +507,41 @@ static int rtc6213n_i2c_probe(struct i2c_client *client,
 		goto err_initial;
 	}
 
-	v4l2_dev = &radio->v4l2_dev;
-	retval = v4l2_device_register(&client->dev, v4l2_dev);
-	if (retval < 0) {
-		dev_err(&client->dev, "couldn't register v4l2_device\n");
-		goto err_video;
-	}
-
-	hdl = &radio->ctrl_handler;
-	v4l2_ctrl_handler_init(hdl, ARRAY_SIZE(rtc6213n_ctrls));
-
-	/* private CID addressed on V4L2_CID_PRIVATE_BASE would not
-	   get the proper type from v4l2_ctrl_fill */
-	retval = rtc6213n_radio_add_new_custom(radio,
-		RTC6213N_ID_CSR0_ENABLE);
-	if (retval < 0)
-		goto errunreg;
-
-	retval = rtc6213n_radio_add_new_custom(radio,
-		RTC6213N_ID_CSR0_DISABLE);
-	if (retval < 0)
-		goto errunreg;
-
-	retval = rtc6213n_radio_add_new_custom(radio,
-		RTC6213N_ID_DEVICEID);
-	if (retval < 0)
-		goto errunreg;
-
-	retval = rtc6213n_radio_add_new_custom(radio,
-		RTC6213N_ID_CSR0_DIS_SMUTE);
-	if (retval < 0)
-		goto errunreg;
-
-	retval = rtc6213n_radio_add_new_custom(radio,
-		RTC6213N_ID_CSR0_DIS_MUTE);
-	if (retval < 0)
-		goto errunreg;
-
-	retval = rtc6213n_radio_add_new_custom(radio,
-		RTC6213N_ID_CSR0_DEEM);
-	if (retval < 0)
-		goto errunreg;
-
-	retval = rtc6213n_radio_add_new_custom(radio,
-		RTC6213N_ID_CSR0_BLNDADJUST);
-	if (retval < 0)
-		goto errunreg;
-
-	retval = rtc6213n_radio_add_new_custom(radio,
-		RTC6213N_ID_CSR0_VOLUME);
-	if (retval < 0)
-		goto errunreg;
-
-	retval = rtc6213n_radio_add_new_custom(radio,
-		RTC6213N_ID_CSR0_BAND);
-	if (retval < 0)
-		goto errunreg;
-
-	retval = rtc6213n_radio_add_new_custom(radio,
-		RTC6213N_ID_CSR0_CHSPACE);
-	if (retval < 0)
-		goto errunreg;
-
-	retval = rtc6213n_radio_add_new_custom(radio,
-		RTC6213N_ID_CSR0_DIS_AGC);
-	if (retval < 0)
-		goto errunreg;
-
-	retval = rtc6213n_radio_add_new_custom(radio,
-		RTC6213N_ID_CSR0_RDS_EN);
-	if (retval < 0)
-		goto errunreg;
-
-	retval = rtc6213n_radio_add_new_custom(radio,
-		RTC6213N_ID_SEEK_CANCEL);
-	if (retval < 0)
-		goto errunreg;
-
-	retval = rtc6213n_radio_add_new_custom(radio,
-		RTC6213N_ID_CSR0_SEEKRSSITH);
-	if (retval < 0)
-		goto errunreg;
-
-	retval = rtc6213n_radio_add_new_custom(radio,
-		RTC6213N_ID_CSR0_OFSTH);
-	if (retval < 0)
-		goto errunreg;
-
-	retval = rtc6213n_radio_add_new_custom(radio,
-		RTC6213N_ID_CSR0_QLTTH);
-	if (retval < 0)
-		goto errunreg;
-
-	retval = rtc6213n_radio_add_new_custom(radio,
-		RTC6213N_ID_RSSI);
-	if (retval < 0)
-		goto errunreg;
-
 	radio->users = 0;
 	radio->client = client;
 	mutex_init(&radio->lock);
 
-	memcpy(&radio->videodev, &rtc6213n_viddev_template,
-		sizeof(struct video_device));
+	/* video device allocation and initialization */
+	radio->videodev = video_device_alloc();
+	if (!radio->videodev) {
+		retval = -ENOMEM;
+		goto err_radio;
+	}
+	memcpy(radio->videodev, &rtc6213n_viddev_template,
+		sizeof(rtc6213n_viddev_template));
+	video_set_drvdata(radio->videodev, radio);
 
-	i2c_set_clientdata(client, radio);		/* move from below */
-	radio->videodev.lock = &radio->lock;
-	radio->videodev.v4l2_dev = v4l2_dev;
-	radio->videodev.ioctl_ops = &rtc6213n_ioctl_ops;
-	video_set_drvdata(&radio->videodev, radio);
+	v4l2_dev = kzalloc(sizeof(struct v4l2_device), GFP_KERNEL);
+	if (WARN_ON(!v4l2_dev)) {
+		retval = -ENOMEM;
+		goto err_video;
+	}
+
+	v4l2_dev->notify = NULL;
+	radio->videodev->v4l2_dev = v4l2_dev;
+
+	retval = v4l2_device_register(&client->dev, radio->videodev->v4l2_dev);
+	if (retval < 0)
+		goto err_video;
 
 	/* get device and chip versions */
 	if (rtc6213n_get_all_registers(radio) < 0) {
 		retval = -EIO;
 		goto err_video;
 	}
-	
-/*
-	dev_info(&client->dev,
-		"rtc6213n_i2c_probe DeviceID=0x%4.4hx ChipID=0x%4.4hx ctrls_size=%d handler=%p\n",
-		radio->registers[DEVICEID], radio->registers[CHIPID],
-		1 + ARRAY_SIZE(rtc6213n_ctrls), (void *)hdl);
-*/
-	v4l2_dev->ctrl_handler = hdl;
-	v4l2_ctrl_handler_setup(hdl);
 
-#ifdef _CHECKIRQGPIO
-	gpio = of_get_named_gpio_flags(np, "irq_gpio", 0, &irq_flags);
-	if (!gpio_is_valid(gpio)) {
-		dev_info(&client->dev, "invalid gpio: %d\n", gpio);
-		return -1;
-	}
-
-	if (gpio_request(gpio, "int_overcurrent")) {
-		dev_info(&client->dev, "can't request gpio %d\n", gpio);
-		return -1;
-	}
-
-	if (gpio_direction_input(gpio))	{
-		dev_info(&client->dev, "can't configure gpio %d\n", gpio);
-		gpio_free(gpio);
-		return -1;
-	}
-
-	irq = gpio_to_irq(gpio);
-#endif
+	dev_info(&client->dev, "rtc6213n_i2c_probe DeviceID=0x%4.4hx ChipID=0x%4.4hx\n",
+		radio->registers[DEVICEID], radio->registers[CHIPID]);
 
 	/* rds buffer allocation */
 	radio->buf_size = rds_buf * 3;
@@ -782,36 +557,105 @@ static int rtc6213n_i2c_probe(struct i2c_client *client,
 	init_waitqueue_head(&radio->read_queue);
 	init_waitqueue_head(&rtc6213n_wq);
 
+	/* fmint-gpio */
+	fmint_gpio = of_get_named_gpio(client->dev.of_node, "fmint-gpio", 0);
+	if (!gpio_is_valid(fmint_gpio)) {
+		dev_err(&client->dev, "%s: fmint-gpio invalid %d\n",
+		__func__, fmint_gpio);
+	}
+	retval = gpio_request(fmint_gpio, "FM_INT");
+	if (retval < 0) {
+		dev_err(&client->dev, "%s: error requesting sv gpio\n",
+			__func__);
+	}
+	gpio_direction_input(fmint_gpio);
+
+	/* interrupt gpio */
+	irq = gpio_to_irq(fmint_gpio);
+	if (retval < 0) {
+		dev_err(&client->dev, "%s: cannot map gpio to irq\n",
+			__func__);
+	}
+
+	radio->fmlna_gpio = 0;
+
+	radio->fmlna_gpio = of_get_named_gpio(client->dev.of_node,
+				"fmlna-gpio", 0);
+	if (radio->fmlna_gpio > 0) {
+		dev_info(&client->dev, "%s: uses fmlna_gpio %d", __func__,
+			radio->fmlna_gpio);
+		retval = gpio_request(radio->fmlna_gpio, "fmlna_gpio");
+		if (retval) {
+			dev_err(&client->dev,
+				"%s: Failed to request fmlna_gpio %d error %d\n",
+				__func__, radio->fmlna_gpio, retval);
+		} else
+			gpio_direction_output(radio->fmlna_gpio, 0);
+	}
+
+	if (of_property_read_bool(client->dev.of_node, "volume_db")) {
+		dev_info(&client->dev, "%s: use fm radio volume db\n", __func__);
+		radio->vol_db = true;
+	} else
+		radio->vol_db = false;
+
+	if (!of_property_read_u32_array(client->dev.of_node, "radio_vol", data, VOLUME_NUM)) {
+		for (i = 0; i < VOLUME_NUM; i++) {
+			radio->rx_vol[i] = (~data[i]) + 1;
+			dev_info(&client->dev, "%s: rx_vol = %d\n", __func__,
+				radio->rx_vol[i]);
+		}
+	} else
+		dev_info(&client->dev, "%s: can not find the volume in the dt\n", __func__);
+
+	if (of_property_read_u32(client->dev.of_node, "seekcfg2", &radio->seekcfg2)) {
+		dev_info(&client->dev, "%s : Unable to find seekcfg2 and set default\n", __func__);
+		radio->seekcfg2 = 0x4050;
+	}
+	dev_info(&client->dev, "%s : seekcfg2 0x%04x\n", __func__, radio->seekcfg2);
+
+	if (!of_property_read_u8(client->dev.of_node, "blend_lvl", &radio->blend_level)) {
+		dev_info(&client->dev, "%s: blend_level = %d\n", __func__,
+				radio->blend_level);
+	} else {
+		radio->blend_level = 0;
+		dev_info(&client->dev, "%s: can not find the blend level in the dt\n",
+		__func__);
+	}
+
+	if (!of_property_read_u32(client->dev.of_node, "blendofs", &radio->blend_ofs)) {
+		dev_info(&client->dev, "%s: blend_ofs = %d\n", __func__,
+				radio->blend_ofs);
+	} else {
+		radio->blend_ofs = 0;
+		dev_info(&client->dev, "%s: can not find the blend level in the dt\n",
+		__func__);
+	}
+
+
 	/* mark Seek/Tune Complete Interrupt enabled */
 	radio->stci_enabled = true;
 	init_completion(&radio->completion);
 
-#ifdef _CHECKIRQGPIO
+	dev_info(&client->dev, "rtc6213n_i2c_probe DeviceID=0x%4.4hx ChipID=0x%4.4hx\n",
+		radio->registers[DEVICEID], radio->registers[CHIPID]);
+
 	retval = devm_request_threaded_irq(&client->dev, irq, NULL,
 		rtc6213n_i2c_interrupt,	IRQF_TRIGGER_FALLING|IRQF_ONESHOT,
 		DRIVER_NAME, radio);
-#else
-	dev_info(&client->dev, "rtc6213n_i2c_probe DeviceID=0x%4.4hx ChipID=0x%4.4hx\n",
-		radio->registers[DEVICEID], radio->registers[CHIPID]);
-	retval = request_threaded_irq(client->irq, NULL, rtc6213n_i2c_interrupt,
-		IRQF_TRIGGER_FALLING|IRQF_ONESHOT,
-		DRIVER_NAME, radio); /*irq_test */
-#endif
-
 	if (retval) {
 		dev_err(&client->dev, "Failed to register interrupt\n");
 		goto err_rds;
 	}
 
 	/* register video device */
-	retval = video_register_device(&radio->videodev, VFL_TYPE_RADIO,
+	retval = video_register_device(radio->videodev, VFL_TYPE_RADIO,
 		radio_nr);
 	if (retval) {
-		dev_info(&client->dev, "Could not register video device\n");
+		dev_warn(&client->dev, "Could not register video device\n");
 		goto err_all;
 	}
-	/* i2c_set_clientdata(client, radio); */
-	dev_info(&client->dev, "rtc6213n_i2c_probe exit\n");
+	i2c_set_clientdata(client, radio);
 
 	return 0;
 err_all:
@@ -819,15 +663,13 @@ err_all:
 err_rds:
 	kfree(radio->buffer);
 err_video:
-	video_device_release(&radio->videodev);
-errunreg:
-	v4l2_ctrl_handler_free(hdl);
-	v4l2_device_unregister(v4l2_dev);
-/* err_radio: */
+	video_unregister_device(radio->videodev);
+err_radio:
 	kfree(radio);
 err_initial:
 	return retval;
 }
+
 
 /*
  * rtc6213n_i2c_remove - remove the device
@@ -837,15 +679,13 @@ static int rtc6213n_i2c_remove(struct i2c_client *client)
 	struct rtc6213n_device *radio = i2c_get_clientdata(client);
 
 	free_irq(client->irq, radio);
-	video_device_release(&radio->videodev);
-	v4l2_ctrl_handler_free(&radio->ctrl_handler);
-	video_unregister_device(&radio->videodev);
-	v4l2_device_unregister(&radio->v4l2_dev);
+	kfree(radio->buffer);
+	video_unregister_device(radio->videodev);
 	kfree(radio);
-	dev_info(&client->dev, "rtc6213n_i2c_remove exit\n");
 
 	return 0;
 }
+
 
 #ifdef CONFIG_PM
 /*
@@ -856,7 +696,8 @@ static int rtc6213n_i2c_suspend(struct device *dev)
 	struct i2c_client *client = to_i2c_client(dev);
 	struct rtc6213n_device *radio = i2c_get_clientdata(client);
 
-	dev_info(&radio->videodev.dev, "rtc6213n_i2c_suspend\n");
+	dev_info(&radio->videodev->dev, "rtc6213n_i2c_suspend\n");
+
 	return 0;
 }
 
@@ -869,7 +710,7 @@ static int rtc6213n_i2c_resume(struct device *dev)
 	struct i2c_client *client = to_i2c_client(dev);
 	struct rtc6213n_device *radio = i2c_get_clientdata(client);
 
-	dev_info(&radio->videodev.dev, "rtc6213n_i2c_resume\n");
+	dev_info(&radio->videodev->dev, "rtc6213n_i2c_resume\n");
 
 	return 0;
 }
