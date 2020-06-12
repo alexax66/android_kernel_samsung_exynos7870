@@ -971,7 +971,7 @@ int mms_fw_update_from_kernel(struct mms_ts_info *info, bool force)
 	enable_irq(info->client->irq);
 	mutex_unlock(&info->lock);
 
-	if (ret < 0) {
+	if (unlikely(ret < 0)) {
 		goto ERROR;
 	}
 
@@ -1093,7 +1093,7 @@ int mms_fw_update_from_ffu(struct mms_ts_info *info, bool force)
 	enable_irq(info->client->irq);
 	mutex_unlock(&info->lock);
 
-	if (ret < 0) {
+	if (unlikely(ret < 0)) {
 		goto ERROR;
 	}
 
