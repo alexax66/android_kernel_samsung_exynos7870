@@ -789,8 +789,6 @@ static irqreturn_t mms_interrupt(int irq, void *dev_id)
 		pm_wakeup_event(info->input_dev->dev.parent, 1000);
 	}
 
-
-
 	tsp_debug_dbg(false, &client->dev, "%s [START]\n", __func__);
 
 	// AOT function
