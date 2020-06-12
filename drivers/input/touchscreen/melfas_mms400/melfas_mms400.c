@@ -785,9 +785,10 @@ static irqreturn_t mms_interrupt(int irq, void *dev_id)
 	u8 category = 0;
 	u8 alert_type = 0;
 
-	if (info->lowpower_mode){
+	if (info->lowpower_mode)
 		pm_wakeup_event(info->input_dev->dev.parent, 1000);
-	}
+
+	pm_qos_update_request(&info->pm_qos_req, 100);
 
 	tsp_debug_dbg(false, &client->dev, "%s [START]\n", __func__);
 
@@ -834,12 +835,15 @@ static irqreturn_t mms_interrupt(int irq, void *dev_id)
 
 		} else {
 			input_err(true, &client->dev, "%s [ERROR] Read a wrong aot action %x\n", __func__, alert_type);
+
+			pm_qos_update_request(&info->pm_qos_req, PM_QOS_DEFAULT_VALUE);
 			return IRQ_HANDLED;
 		}
 		input_report_key(info->input_dev, KEY_BLACK_UI_GESTURE, 1);
 		input_sync(info->input_dev);
 		input_report_key(info->input_dev, KEY_BLACK_UI_GESTURE, 0);
 		input_sync(info->input_dev);
+
 		pm_qos_update_request(&info->pm_qos_req, PM_QOS_DEFAULT_VALUE);
 		return IRQ_HANDLED;
 	}
@@ -911,6 +915,8 @@ static irqreturn_t mms_interrupt(int irq, void *dev_id)
 	}
 
 	tsp_debug_dbg(false, &client->dev, "%s [DONE]\n", __func__);
+
+	pm_qos_update_request(&info->pm_qos_req, PM_QOS_DEFAULT_VALUE);
 	return IRQ_HANDLED;
 
 ERROR:
@@ -923,7 +929,8 @@ ERROR:
 		mms_enable(info);
 	}
 
-	pm_qos_update_request(&info->pm_qos_req, 100);
+	pm_qos_update_request(&info->pm_qos_req, PM_QOS_DEFAULT_VALUE);
+
 	return IRQ_HANDLED;
 }
 
