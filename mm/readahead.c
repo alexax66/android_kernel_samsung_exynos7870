@@ -204,15 +204,15 @@ out:
 }
 
 /* Copied from fs/fs-writeback.c to avoid backport conflict. */
-//static inline struct backing_dev_info *inode_to_bdi(struct inode *inode)
-//{
-//	struct super_block *sb = inode->i_sb;
-//
-//	if (sb_is_blkdev_sb(sb))
-//		return inode->i_mapping->backing_dev_info;
-//
-//	return sb->s_bdi;
-//}
+static inline struct backing_dev_info *inode_to_bdi(struct inode *inode)
+{
+	struct super_block *sb = inode->i_sb;
+
+	if (sb_is_blkdev_sb(sb))
+		return inode->i_mapping->backing_dev_info;
+
+	return sb->s_bdi;
+}
 
 /*
  * Chunk the readahead into 2 megabyte units, so that we don't pin too much
