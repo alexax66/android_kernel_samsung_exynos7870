@@ -10,7 +10,6 @@
  * Please see Documentation/filesystems/sysfs.txt for more information.
  */
 
-#define pr_fmt(fmt)	"sysfs: " fmt
 #undef DEBUG
 
 #include <linux/fs.h>
@@ -22,14 +21,14 @@ DEFINE_SPINLOCK(sysfs_symlink_target_lock);
 
 void sysfs_warn_dup(struct kernfs_node *parent, const char *name)
 {
-	char *buf;
+	char *buf, *path = NULL;
 
 	buf = kzalloc(PATH_MAX, GFP_KERNEL);
 	if (buf)
-		kernfs_path(parent, buf, PATH_MAX);
+		path = kernfs_path(parent, buf, PATH_MAX);
 
-	    pr_warn("cannot create duplicate filename '%s/%s'\n", buf, name);
-	    dump_stack();
+	WARN(1, KERN_WARNING "sysfs: cannot create duplicate filename '%s/%s'\n",
+	     path, name);
 
 	kfree(buf);
 }
