@@ -160,10 +160,10 @@ KBASE_EXPORT_TEST_API(kbase_event_dequeue);
  *                                       resources
  * @data:  Work structure
  */
-static void kbase_event_process_noreport_worker(struct work_struct *data)
+static void kbase_event_process_noreport_worker(struct kthread_work *data)
 {
 	struct kbase_jd_atom *katom = container_of(data, struct kbase_jd_atom,
-			work);
+			worker);
 	struct kbase_context *kctx = katom->kctx;
 
 	if (katom->core_req & BASE_JD_REQ_EXTERNAL_RESOURCES)
@@ -187,8 +187,8 @@ static void kbase_event_process_noreport(struct kbase_context *kctx,
 		struct kbase_jd_atom *katom)
 {
 	if (katom->core_req & BASE_JD_REQ_EXTERNAL_RESOURCES) {
-		INIT_WORK(&katom->work, kbase_event_process_noreport_worker);
-		queue_work(kctx->event_workq, &katom->work);
+		init_kthread_work(&katom->worker, kbase_event_process_noreport_worker);
+		queue_kthread_work(&kctx->gpu_worker, &katom->worker);
 	} else {
 		kbase_event_process(kctx, katom);
 	}
@@ -264,6 +264,8 @@ void kbase_event_close(struct kbase_context *kctx)
 
 int kbase_event_init(struct kbase_context *kctx)
 {
+	static struct sched_param param = { .sched_priority = 20 };
+
 	KBASE_DEBUG_ASSERT(kctx);
 
 	INIT_LIST_HEAD(&kctx->event_list);
@@ -272,10 +274,16 @@ int kbase_event_init(struct kbase_context *kctx)
 	atomic_set(&kctx->event_count, 0);
 	kctx->event_coalesce_count = 0;
 	atomic_set(&kctx->event_closed, false);
-	kctx->event_workq = alloc_workqueue("kbase_event", WQ_MEM_RECLAIM, 1);
 
-	if (NULL == kctx->event_workq)
+	init_kthread_worker(&kctx->gpu_worker);
+	kctx->gpu_worker_thread = kthread_run(kthread_worker_fn,
+		&kctx->gpu_worker, "kbase_event_thread");
+
+	if (IS_ERR(kctx->gpu_worker_thread))
 		return -EINVAL;
+
+	/* must use the FIFO scheduler as it is realtime sensitive */
+	sched_setscheduler(kctx->gpu_worker_thread, SCHED_FIFO, &param);
 
 	return 0;
 }
@@ -287,10 +295,11 @@ void kbase_event_cleanup(struct kbase_context *kctx)
 	int event_count;
 
 	KBASE_DEBUG_ASSERT(kctx);
-	KBASE_DEBUG_ASSERT(kctx->event_workq);
+	KBASE_DEBUG_ASSERT(kctx->gpu_worker);
 
-	flush_workqueue(kctx->event_workq);
-	destroy_workqueue(kctx->event_workq);
+	/* Kill gpu_worker */
+	flush_kthread_worker(&kctx->gpu_worker);
+	kthread_stop(kctx->gpu_worker_thread);
 
 	/* We use kbase_event_dequeue to remove the remaining events as that
 	 * deals with all the cleanup needed for the atoms.

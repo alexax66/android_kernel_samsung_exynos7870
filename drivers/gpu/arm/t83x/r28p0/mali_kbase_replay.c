@@ -904,7 +904,7 @@ out:
 	return ret;
 }
 
-static void kbase_replay_process_worker(struct work_struct *data)
+static void kbase_replay_process_worker(struct kthread_work *data)
 {
 	struct kbase_jd_atom *katom;
 	struct kbase_context *kctx;
@@ -915,7 +915,7 @@ static void kbase_replay_process_worker(struct work_struct *data)
 	struct kbase_jd_atom *t_katom, *f_katom;
 	base_jd_prio atom_prio;
 
-	katom = container_of(data, struct kbase_jd_atom, work);
+	katom = container_of(data, struct kbase_jd_atom, worker);
 	kctx = katom->kctx;
 	jctx = &kctx->jctx;
 
@@ -1149,8 +1149,8 @@ bool kbase_replay_process(struct kbase_jd_atom *katom)
 	if (katom->retry_count == 1)
 		kbase_disjoint_state_up(kbdev);
 
-	INIT_WORK(&katom->work, kbase_replay_process_worker);
-	queue_work(kctx->event_workq, &katom->work);
+	init_kthread_work(&katom->worker, kbase_replay_process_worker);
+	queue_kthread_work(&kctx->gpu_worker, &katom->worker);
 
 	return true;
 }
