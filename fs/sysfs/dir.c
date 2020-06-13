@@ -10,6 +10,7 @@
  */
 
 #define pr_fmt(fmt)	"sysfs: " fmt
+#undef DEBUG
 
 #include <linux/fs.h>
 #include <linux/kobject.h>
