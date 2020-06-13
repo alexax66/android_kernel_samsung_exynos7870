@@ -320,24 +320,13 @@ static unsigned long get_unmapped_area_mem(struct file *file,
 	return pgoff << PAGE_SHIFT;
 }
 
-/* permit direct mmap, for read, write or exec */
-static unsigned memory_mmap_capabilities(struct file *file)
-{
-	return NOMMU_MAP_DIRECT |
-		NOMMU_MAP_READ | NOMMU_MAP_WRITE | NOMMU_MAP_EXEC;
-}
-
-static unsigned zero_mmap_capabilities(struct file *file)
-{
-	return NOMMU_MAP_COPY;
-}
-
 /* can't do an in-place private mapping if there's no MMU */
 static inline int private_mapping_ok(struct vm_area_struct *vma)
 {
 	return vma->vm_flags & VM_MAYSHARE;
 }
 #else
+#define get_unmapped_area_mem	NULL
 
 static inline int private_mapping_ok(struct vm_area_struct *vma)
 {
@@ -778,10 +767,7 @@ static const struct file_operations mem_fops = {
 	.write		= write_mem,
 	.mmap		= mmap_mem,
 	.open		= open_mem,
-#ifndef CONFIG_MMU
 	.get_unmapped_area = get_unmapped_area_mem,
-	.mmap_capabilities = memory_mmap_capabilities,
-#endif
 };
 #endif
 
@@ -792,10 +778,7 @@ static const struct file_operations kmem_fops = {
 	.write		= write_kmem,
 	.mmap		= mmap_kmem,
 	.open		= open_kmem,
-#ifndef CONFIG_MMU
 	.get_unmapped_area = get_unmapped_area_mem,
-	.mmap_capabilities = memory_mmap_capabilities,
-#endif
 };
 #endif
 
@@ -824,9 +807,16 @@ static const struct file_operations zero_fops = {
 	.read_iter	= read_iter_zero,
 	.aio_write	= aio_write_zero,
 	.mmap		= mmap_zero,
-#ifndef CONFIG_MMU
-	.mmap_capabilities = zero_mmap_capabilities,
-#endif
+};
+
+/*
+ * capabilities for /dev/zero
+ * - permits private mappings, "copies" are taken of the source of zeros
+ * - no writeback happens
+ */
+static struct backing_dev_info zero_bdi = {
+	.name		= "char/mem",
+	.capabilities	= BDI_CAP_MAP_COPY | BDI_CAP_NO_ACCT_AND_WRITEBACK,
 };
 
 static const struct file_operations full_fops = {
@@ -840,30 +830,30 @@ static const struct memdev {
 	const char *name;
 	umode_t mode;
 	const struct file_operations *fops;
-	fmode_t fmode;
+	struct backing_dev_info *dev_info;
 } devlist[] = {
 #ifdef CONFIG_DEVMEM
-	 [1] = { "mem", 0, &mem_fops, FMODE_UNSIGNED_OFFSET },
+	 [1] = { "mem", 0, &mem_fops, &directly_mappable_cdev_bdi },
 #endif
 #ifdef CONFIG_DEVKMEM
-	 [2] = { "kmem", 0, &kmem_fops, FMODE_UNSIGNED_OFFSET },
+	 [2] = { "kmem", 0, &kmem_fops, &directly_mappable_cdev_bdi },
 #endif
-	 [3] = { "null", 0666, &null_fops, 0 },
+	 [3] = { "null", 0666, &null_fops, NULL },
 #ifdef CONFIG_DEVPORT
-	 [4] = { "port", 0, &port_fops, 0 },
+	 [4] = { "port", 0, &port_fops, NULL },
 #endif
-	 [5] = { "zero", 0666, &zero_fops, 0 },
-	 [7] = { "full", 0666, &full_fops, 0 },
-	 [8] = { "random", 0666, &random_fops, 0 },
-	 [9] = { "urandom", 0666, &urandom_fops, 0 },
+	 [5] = { "zero", 0666, &zero_fops, &zero_bdi },
+	 [7] = { "full", 0666, &full_fops, NULL },
+	 [8] = { "random", 0666, &random_fops, NULL },
+	 [9] = { "urandom", 0666, &urandom_fops, NULL },
 #ifdef CONFIG_PRINTK
-	[11] = { "kmsg", 0644, &kmsg_fops, 0 },
+	[11] = { "kmsg", 0644, &kmsg_fops, NULL },
 #endif
 #ifdef CONFIG_KNOX_KAP
-	[13] = { "knox_kap", 0664, &knox_kap_fops, 0 },
+	[13] = { "knox_kap", 0664, &knox_kap_fops, NULL },
 #endif
 #ifdef CONFIG_MST_LDO
-	[14] = { "mst_ctrl", 0666, &mst_ctrl_fops, 0 },
+	[14] = { "mst_ctrl", 0666, &mst_ctrl_fops, NULL },
 #endif
 };
 
@@ -881,7 +871,12 @@ static int memory_open(struct inode *inode, struct file *filp)
 		return -ENXIO;
 
 	filp->f_op = dev->fops;
-	filp->f_mode |= dev->fmode;
+	if (dev->dev_info)
+		filp->f_mapping->backing_dev_info = dev->dev_info;
+
+	/* Is /dev/mem or /dev/kmem ? */
+	if (dev->dev_info == &directly_mappable_cdev_bdi)
+		filp->f_mode |= FMODE_UNSIGNED_OFFSET;
 
 	if (dev->fops->open)
 		return dev->fops->open(inode, filp);
@@ -906,6 +901,11 @@ static struct class *mem_class;
 static int __init chr_dev_init(void)
 {
 	int minor;
+	int err;
+
+	err = bdi_init(&zero_bdi);
+	if (err)
+		return err;
 
 	if (register_chrdev(MEM_MAJOR, "mem", &memory_fops))
 		printk("unable to get major %d for memory devs\n", MEM_MAJOR);

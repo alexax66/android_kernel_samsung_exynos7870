@@ -761,15 +761,16 @@ static inline unsigned long mmap_prot(struct file *file, unsigned long prot)
 		return prot | PROT_EXEC;
 	/*
 	 * ditto if it's not on noexec mount, except that on !MMU we need
-	 * NOMMU_MAP_EXEC (== VM_MAYEXEC) in this case
+	 * BDI_CAP_EXEC_MMAP (== VM_MAYEXEC) in this case
 	 */
 	if (!(file->f_path.mnt->mnt_flags & MNT_NOEXEC)) {
 #ifndef CONFIG_MMU
-		if (file->f_op->mmap_capabilities) {
-			unsigned caps = file->f_op->mmap_capabilities(file);
-			if (!(caps & NOMMU_MAP_EXEC))
-				return prot;
-		}
+		unsigned long caps = 0;
+		struct address_space *mapping = file->f_mapping;
+		if (mapping && mapping->backing_dev_info)
+			caps = mapping->backing_dev_info->capabilities;
+		if (!(caps & BDI_CAP_EXEC_MAP))
+			return prot;
 #endif
 		return prot | PROT_EXEC;
 	}

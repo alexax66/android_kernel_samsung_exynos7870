@@ -1722,7 +1722,8 @@ static int setup_bdi(struct btrfs_fs_info *info, struct backing_dev_info *bdi)
 {
 	int err;
 
-	err = bdi_setup_and_register(bdi, "btrfs");
+	bdi->capabilities = BDI_CAP_MAP_COPY;
+	err = bdi_setup_and_register(bdi, "btrfs", BDI_CAP_MAP_COPY);
 	if (err)
 		return err;
 
