@@ -1318,9 +1318,9 @@ static void unmap_single_vma(struct mmu_gather *tlb,
 			 * safe to do nothing in this case.
 			 */
 			if (vma->vm_file) {
-				i_mmap_lock_write(vma->vm_file->f_mapping);
+				mutex_lock(&vma->vm_file->f_mapping->i_mmap_mutex);
 				__unmap_hugepage_range_final(tlb, vma, start, end, NULL);
-				i_mmap_unlock_write(vma->vm_file->f_mapping);
+				mutex_unlock(&vma->vm_file->f_mapping->i_mmap_mutex);
 			}
 		} else
 			unmap_page_range(tlb, vma, start, end, details);
@@ -2376,12 +2376,12 @@ void unmap_mapping_range(struct address_space *mapping,
 		details.last_index = ULONG_MAX;
 
 
-	i_mmap_lock_write(mapping);
+	mutex_lock(&mapping->i_mmap_mutex);
 	if (unlikely(!RB_EMPTY_ROOT(&mapping->i_mmap)))
 		unmap_mapping_range_tree(&mapping->i_mmap, &details);
 	if (unlikely(!list_empty(&mapping->i_mmap_nonlinear)))
 		unmap_mapping_range_list(&mapping->i_mmap_nonlinear, &details);
-	i_mmap_unlock_write(mapping);
+	mutex_unlock(&mapping->i_mmap_mutex);
 }
 EXPORT_SYMBOL(unmap_mapping_range);
 

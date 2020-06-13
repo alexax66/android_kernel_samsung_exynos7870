@@ -272,9 +272,9 @@ void unlink_file_vma(struct vm_area_struct *vma)
 
 	if (file) {
 		struct address_space *mapping = file->f_mapping;
-		i_mmap_lock_write(mapping);
+		mutex_lock(&mapping->i_mmap_mutex);
 		__remove_shared_vm_struct(vma, file, mapping);
-		i_mmap_unlock_write(mapping);
+		mutex_unlock(&mapping->i_mmap_mutex);
 	}
 }
 
@@ -704,14 +704,14 @@ static void vma_link(struct mm_struct *mm, struct vm_area_struct *vma,
 
 	if (vma->vm_file) {
 		mapping = vma->vm_file->f_mapping;
-		i_mmap_lock_write(mapping);
+		mutex_lock(&mapping->i_mmap_mutex);
 	}
 
 	__vma_link(mm, vma, prev, rb_link, rb_parent);
 	__vma_link_file(vma);
 
 	if (mapping)
-		i_mmap_unlock_write(mapping);
+		mutex_unlock(&mapping->i_mmap_mutex);
 
 	mm->map_count++;
 	validate_mm(mm);
@@ -826,7 +826,7 @@ again:			remove_next = 1 + (end > next->vm_end);
 							next->vm_end);
 		}
 
-		i_mmap_lock_write(mapping);
+		mutex_lock(&mapping->i_mmap_mutex);
 		if (insert) {
 			/*
 			 * Put into interval tree now, so instantiated pages
@@ -913,7 +913,7 @@ again:			remove_next = 1 + (end > next->vm_end);
 		anon_vma_unlock_write(anon_vma);
 	}
 	if (mapping)
-		i_mmap_unlock_write(mapping);
+		mutex_unlock(&mapping->i_mmap_mutex);
 
 	if (root) {
 		uprobe_mmap(vma);
@@ -3269,7 +3269,7 @@ static void vm_unlock_mapping(struct address_space *mapping)
 		 * AS_MM_ALL_LOCKS can't change to 0 from under us
 		 * because we hold the mm_all_locks_mutex.
 		 */
-		i_mmap_unlock_write(mapping);
+		mutex_unlock(&mapping->i_mmap_mutex);
 		if (!test_and_clear_bit(AS_MM_ALL_LOCKS,
 					&mapping->flags))
 			BUG();
