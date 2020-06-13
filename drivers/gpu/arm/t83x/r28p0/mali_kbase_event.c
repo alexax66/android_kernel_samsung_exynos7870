@@ -264,7 +264,7 @@ void kbase_event_close(struct kbase_context *kctx)
 
 int kbase_event_init(struct kbase_context *kctx)
 {
-	static struct sched_param param = { .sched_priority = 20 };
+	static struct sched_param param = { .sched_priority = 4 };
 
 	KBASE_DEBUG_ASSERT(kctx);
 
@@ -283,7 +283,7 @@ int kbase_event_init(struct kbase_context *kctx)
 		return -EINVAL;
 
 	/* must use the FIFO scheduler as it is realtime sensitive */
-	sched_setscheduler(kctx->gpu_worker_thread, SCHED_FIFO, &param);
+	sched_setscheduler_nocheck(kctx->gpu_worker_thread, SCHED_FIFO, &param);
 
 	return 0;
 }
