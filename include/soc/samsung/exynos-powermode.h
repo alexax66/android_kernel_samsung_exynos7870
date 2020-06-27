@@ -94,8 +94,6 @@ enum exynos_idle_ip {
 	NUM_IDLE_IP,
 };
 
-#define MAX_CLUSTER		2
-
 /**
   IDLE_IP control
  */
@@ -106,7 +104,7 @@ enum exynos_idle_ip {
 	for ((mode) = 0; (mode) < NUM_SYS_POWERDOWN; (mode)++)
 
 #define for_each_cluster(id)					\
-	for ((id) = 0; (id) < MAX_CLUSTER; (id)++)
+	for ((id) = 0; (id) < CONFIG_NR_CLUSTERS; (id)++)
 
 /**
  * external driver APIs

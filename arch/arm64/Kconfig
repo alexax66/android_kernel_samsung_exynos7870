@@ -630,6 +630,12 @@ config NR_CPUS
 	# These have to remain sorted largest to smallest
 	default "64"
 
+config NR_CLUSTERS
+	int "Maximum number of CLUSTERs (1-4096)"
+	range 1 4096
+	# These have to remain sorted largest to smallest
+	default "2"
+
 config HOTPLUG_CPU
 	bool "Support for hot-pluggable CPUs"
 	help

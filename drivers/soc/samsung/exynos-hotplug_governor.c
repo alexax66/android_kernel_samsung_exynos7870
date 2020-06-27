@@ -121,8 +121,7 @@ struct cpu_hstate {
 #define DOWN_MONITOR_DURATION_NUM	3
 #define TASKS_THRESHOLD			410
 #define DEFAULT_LOAD_THRESHOLD		320
-#define MAX_CLUSTERS			2
-static atomic_t freq_history[MAX_CLUSTERS] =  {ATOMIC_INIT(0), ATOMIC_INIT(0)};
+static atomic_t freq_history[CONFIG_NR_CLUSTERS] =  {ATOMIC_INIT(0), ATOMIC_INIT(0)};
 static struct delayed_work hpgov_dynamic_work;
 
 static struct pm_qos_request hpgov_max_pm_qos;
