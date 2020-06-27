@@ -117,11 +117,11 @@ struct cpu_hstate {
 	},
 };
 
-#define UP_MONITOR_DURATION_NUM   1
-#define DOWN_MONITOR_DURATION_NUM   3
-#define TASKS_THRESHOLD		410
-#define DEFAULT_LOAD_THRESHOLD	320
-#define MAX_CLUSTERS   2
+#define UP_MONITOR_DURATION_NUM		1
+#define DOWN_MONITOR_DURATION_NUM	3
+#define TASKS_THRESHOLD			410
+#define DEFAULT_LOAD_THRESHOLD		320
+#define MAX_CLUSTERS			2
 static atomic_t freq_history[MAX_CLUSTERS] =  {ATOMIC_INIT(0), ATOMIC_INIT(0)};
 static struct delayed_work hpgov_dynamic_work;
 
@@ -484,14 +484,12 @@ static int exynos_cpu_governor_pm_suspend_notifier(struct notifier_block *notifi
 
 	nr = hstate_state[H1].cpu_nr;
 
-	switch (pm_event) {
-		case PM_SUSPEND_PREPARE:
-			atomic_set(&freq_history[GO_UP], 0);
-			atomic_set(&freq_history[GO_DOWN], 0);
+	if (pm_event == PM_SUSPEND_PREPARE) {
+		atomic_set(&freq_history[GO_UP], 0);
+		atomic_set(&freq_history[GO_DOWN], 0);
 
-			cancel_delayed_work_sync(&hpgov_dynamic_work);
-			exynos_hpgov_update_governor(HPGOV_DYNAMIC, nr, nr);
-			break;
+		cancel_delayed_work_sync(&hpgov_dynamic_work);
+		exynos_hpgov_update_governor(HPGOV_DYNAMIC, nr, nr);
 	}
 
 	return NOTIFY_OK;
@@ -510,11 +508,10 @@ static int exynos_cpu_governor_pm_resume_notifier(struct notifier_block *notifie
 
 	nr = hstate_state[H1].cpu_nr;
 
-	switch (pm_event) {
-		case PM_POST_SUSPEND:
-			exynos_hpgov_update_governor(HPGOV_DYNAMIC, NR_CPUS, nr);
-			queue_delayed_work_on(0, system_freezable_wq, &hpgov_dynamic_work, msecs_to_jiffies(100));
-			break;
+	if (pm_event == PM_POST_SUSPEND) {
+		exynos_hpgov_update_governor(HPGOV_DYNAMIC, NR_CPUS, nr);
+		queue_delayed_work_on(0, system_freezable_wq,
+				    &hpgov_dynamic_work, msecs_to_jiffies(100));
 	}
 
 	return NOTIFY_OK;

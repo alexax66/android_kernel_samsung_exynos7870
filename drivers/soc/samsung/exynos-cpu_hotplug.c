@@ -414,12 +414,10 @@ static void __init cpu_hotplug_dt_init(void)
 static int exynos_cpu_hotplug_pm_notifier_down(struct notifier_block *notifier,
 				       unsigned long pm_event, void *v)
 {
-	switch (pm_event) {
-	case PM_SUSPEND_PREPARE:
+	if (pm_event == PM_SUSPEND_PREPARE) {
 		pm_qos_update_request(&str_max_cpu_hotplug_request, CLUSTER0_NR_CPUS);
 
 		update_suspend_flag(true);
-		break;
 	}
 
 	return NOTIFY_OK;
@@ -428,13 +426,11 @@ static int exynos_cpu_hotplug_pm_notifier_down(struct notifier_block *notifier,
 static int exynos_cpu_hotplug_pm_notifier_up(struct notifier_block *notifier,
 		unsigned long pm_event, void *v)
 {
-	switch (pm_event) {
-	case PM_POST_SUSPEND:
+	if (pm_event == PM_POST_SUSPEND) {
 		update_suspend_flag(false);
 		pm_qos_update_request(&str_max_cpu_hotplug_request, NR_CPUS);
 
 		do_cpu_hotplug();
-		break;
 	}
 
 	return NOTIFY_OK;
