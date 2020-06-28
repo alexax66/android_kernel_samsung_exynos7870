@@ -881,7 +881,7 @@ static int find_median_of_bits(struct dw_mci *host, unsigned int map, bool force
 	if (divratio == 1) {
 		if (!(priv->ctrl_flag & DW_MMC_EXYNOS_ENABLE_SHIFT))
 			testbits = orig_bits = map & (map >> 4);
-		dev_info(host->dev, "divratio: %d map: 0x %08x\n",
+		dev_dbg(host->dev, "divratio: %d map: 0x %08x\n",
 					divratio, testbits);
 #define THREEBITS 0x7
 		/* Middle is bit 1. */
@@ -944,7 +944,7 @@ static int find_median_of_16bits(struct dw_mci *host, unsigned int map, bool for
 		return sel;
 
 	divratio = (mci_readl(host, CLKSEL) >> 24) & 0x7;
-	dev_info(host->dev, "divratio: %d map: 0x %08x\n", divratio, map);
+	dev_dbg(host->dev, "divratio: %d map: 0x %08x\n", divratio, map);
 
 	orig_bits = map | (map << 16);
 
@@ -1018,7 +1018,7 @@ static int dw_mci_exynos_execute_tuning(struct dw_mci_slot *slot, u32 opcode,
 	if (host->pdata->tuned) {
 		host->drv_data->misc_control(host, CTRL_RESTORE_CLKSEL, NULL);
 		mci_writel(host, CDTHRCTL, host->cd_rd_thr << 16 | 1);
-		dev_info(host->dev, "EN_SHIFT 0x %08x CLKSEL 0x %08x\n",
+		dev_dbg(host->dev, "EN_SHIFT 0x %08x CLKSEL 0x %08x\n",
 			mci_readl(host, DDR200_ENABLE_SHIFT),
 			mci_readl(host, CLKSEL));
 		return 0;
@@ -1236,7 +1236,7 @@ static int dw_mci_exynos_execute_tuning(struct dw_mci_slot *slot, u32 opcode,
 	if (priv->pinctrl && priv->clk_drive_base)
 		pinctrl_select_state(priv->pinctrl, priv->clk_drive_base);
 
-	dev_info(host->dev, "CLKSEL = 0x%08x, EN_SHIFT = 0x%08x\n",
+	dev_dbg(host->dev, "CLKSEL = 0x%08x, EN_SHIFT = 0x%08x\n",
 			mci_readl(host, CLKSEL),
 			mci_readl(host, DDR200_ENABLE_SHIFT));
 

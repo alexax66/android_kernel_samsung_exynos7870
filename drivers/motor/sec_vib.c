@@ -115,7 +115,7 @@ static void sec_vib_enable(struct timed_output_dev *dev, int value)
 		container_of(dev, struct sec_vib_drvdata, dev);
 	unsigned long	flags;
 
-	printk("[VIB] %s, timedout = %d \n", __func__, value);
+	dev_dbg("[VIB] %s, timedout = %d \n", __func__, value);
 
 	hrtimer_cancel(&ddata->timer);
 
@@ -144,7 +144,7 @@ static void sec_vib_work(struct work_struct *work)
 	struct sec_vib_drvdata *ddata = 
 		container_of(work, struct sec_vib_drvdata, work);
 
-	printk("[VIB] %s, timedout = %d , running = %d \n", __func__, ddata->timeout, ddata->running );
+	dev_dbg("[VIB] %s, timedout = %d , running = %d \n", __func__, ddata->timeout, ddata->running );
 
 	if (ddata->timeout > 0) {
 		if (ddata->running)
