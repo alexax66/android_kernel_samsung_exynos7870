@@ -56,6 +56,10 @@
 #define S5P_MFC_DEC_DRM_NAME	"s5p-mfc-dec-secure"
 #define S5P_MFC_ENC_DRM_NAME	"s5p-mfc-enc-secure"
 
+#if defined (CONFIG_LAZYPLUG)
+extern void lazyplug_enter_lazy(bool enter);
+#endif
+
 static struct pm_qos_request s5p_mfc_pm_qos_request;
 
 int debug;
@@ -2082,6 +2086,9 @@ static int s5p_mfc_open(struct file *file)
 #endif
 	}
 
+#ifdef CONFIG_LAZYPLUG
+	lazyplug_enter_lazy(true);
+#endif
 	mfc_info_ctx("MFC open completed [%d:%d] version = %d\n",
 			dev->num_drm_inst, dev->num_inst, MFC_DRIVER_INFO);
 	mutex_unlock(&dev->mfc_mutex);
@@ -2189,6 +2196,9 @@ static int s5p_mfc_release(struct file *file)
 	clear_bit(ctx->num, &dev->ctx_work_bits);
 	spin_unlock_irq(&dev->condlock);
 
+#ifdef CONFIG_LAZYPLUG
+	lazyplug_enter_lazy(false);
+#endif
 	/* If a H/W operation is in progress, wait for it complete */
 	if (need_to_wait_nal_abort(ctx)) {
 		if (s5p_mfc_wait_for_done_ctx(ctx,

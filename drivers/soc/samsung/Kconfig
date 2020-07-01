@@ -67,6 +67,14 @@ config MCINFO_SYSFS
 	depends on EXYNOS_MCINFO
 	default	y if SYSFS
 
+config LAZYPLUG
+	bool "Conservative hotplugging for generic devices"
+	depends on SMP && HOTPLUG_CPU && !EXYNOS_HOTPLUG_CPU
+	default n
+	help
+	  This enables the conservative hotplugging, lazyplug by arter97
+	  based on intelli_plug. Refer to the comments for more info.
+
 endif #SOC_SAMSUNG
 
 config SEC_INCELL
