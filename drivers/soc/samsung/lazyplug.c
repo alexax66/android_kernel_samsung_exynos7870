@@ -542,5 +542,4 @@ late_initcall(lazyplug_init);
 
 MODULE_AUTHOR("Park Ju Hyung <qkrwngud825@gmail.com>");
 MODULE_DESCRIPTION("The conservative hotplugging, lazyplug by arter97 based on intelli_plug.");
-MODULE_LICENSE("GPLv2");
-
+MODULE_LICENSE("GPL v2");
