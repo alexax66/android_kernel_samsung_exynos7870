@@ -49,8 +49,13 @@ config SCHED_AVG_NR_RUNNING
 	help
 	  Enable to use average nr_running in scheduler
 
+config EXYNOS_CPU_HOTPLUG
+	bool "Enable Exynos dynamic CPU hotplug"
+	default n
+
 config EXYNOS_HOTPLUG_GOVERNOR
 	bool "Enable Exynos dynamic hotplug governor"
+	depends on EXYNOS_CPU_HOTPLUG
 	select SCHED_AVG_NR_RUNNING
 
 config EXYNOS_MCINFO
