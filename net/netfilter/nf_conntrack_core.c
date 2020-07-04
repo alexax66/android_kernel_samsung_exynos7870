@@ -53,10 +53,6 @@
 #include <net/netfilter/nf_nat_core.h>
 #include <net/netfilter/nf_nat_helper.h>
 
-/* START_OF_KNOX_NPA */
-#include <net/ncm.h>
-/* END_OF_KNOX_NPA */
-
 #define NF_CONNTRACK_VERSION	"0.5.0"
 
 int (*nfnetlink_parse_nat_setup_hook)(struct nf_conn *ct,

@@ -913,42 +913,6 @@ config TIMA_LKMAUTH
 	  TIMA authenticates loaded kernel modules. Disable it if you don't
 	  want TIMA enabled.
 
-config TIMA_RKP
-	bool "Enable RKP (Realtime Kernel Protection) TIMA feature"
-	depends on TIMA
-	select UH_RKP
-	default n
-
-config UH_RKP
-	bool "Enable RKP (Realtime Kernel Protection) UH feature"
-	help
-	  it protects a kernel text and etc.
-
-config TIMA_RKP_4G
-	bool "Support 4G model"
-	depends on TIMA_RKP
-	default n
-
-config RKP_KDP
-	bool "Protection for cred structure"
-	depends on TIMA_RKP
-	default n
-	help
-		Prevents unauthorized cred modification.
-
-config RKP_DMAP_PROT
-	bool "Page Double Mapping protection"
-	depends on (TIMA_RKP && RKP_KDP)
-	default n
-	help
-		Prevents unauthorized cred modification.
-
-config TIMA_TEST_INFRA
-	tristate "Testing infrastructure for TIMA"
-	default n
-	help
-	  Kernel bits of the TIMA test infrastructure
-
 config BUILD_ARM64_APPENDED_DTB_IMAGE
 	bool "Build a concatenated Image.gz/dtb by default"
 	depends on OF

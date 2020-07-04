@@ -22,10 +22,6 @@
 #endif
 #include <linux/sec_debug.h>
 
-#ifdef CONFIG_KNOX_KAP
-extern int boot_mode_security;
-#endif
-
 /*
  * Example usage: sec_log=256K@0x45000000
  * In above case, log_buf size is 256KB and its base address is
@@ -34,7 +30,6 @@ extern int boot_mode_security;
  * (base - 8).
  */
 #define LOG_MAGIC 0x4d474f4c	/* "LOGM" */
-
 
 #ifdef CONFIG_SEC_AVC_LOG
 static unsigned *sec_avc_log_ptr;
@@ -644,36 +639,3 @@ static int __init __init_sec_tsp_raw_data(void)
 fs_initcall(__init_sec_tsp_raw_data);	/* earlier than device_initcall */
 
 #endif /* CONFIG_SEC_DEBUG_TSP_LOG */
-
-#ifdef CONFIG_SEC_DEBUG_TIMA_LOG
-
-static int __init sec_tima_log_setup(char *str)
-{
-	unsigned size = memparse(str, &str);
-	unsigned long base = 0;
-	/* If we encounter any problem parsing str ... */
-	if (!size || size != roundup_pow_of_two(size) || *str != '@'
-		|| kstrtoul(str + 1, 0, &base))
-			goto out;
-
-#ifdef CONFIG_NO_BOOTMEM
-	if (memblock_is_region_reserved(base, size) ||
-		memblock_reserve(base, size)) {
-#else
-	if (reserve_bootmem(base , size, BOOTMEM_EXCLUSIVE)) {
-#endif
-			pr_err("%s: failed reserving size %d " \
-						"at base 0x%lx\n", __func__, size, base);
-			goto out;
-	}
-	pr_info("tima :%s, base:%lx, size:%x \n", __func__,base, size);
-#ifdef CONFIG_KNOX_KAP
-	if (!boot_mode_security) goto out;
-#endif
-
-	return 1;
-out:
-	return 0;
-}
-__setup("sec_tima_log=", sec_tima_log_setup);
-#endif /* CONFIG_SEC_DEBUG_TIMA_LOG */

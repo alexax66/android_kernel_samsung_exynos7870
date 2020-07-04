@@ -89,10 +89,6 @@
 #include <asm/smp.h>
 #endif
 
-#ifdef CONFIG_TIMA_RKP
-#include <linux/vmm.h>
-#include <linux/rkp_entry.h> 
-#endif //CONFIG_TIMA_RKP
 #ifdef CONFIG_SEC_EXT
 #include <linux/sec_ext.h>
 #endif
@@ -107,10 +103,7 @@ static int kernel_init(void *);
 extern void init_IRQ(void);
 extern void fork_init(unsigned long);
 extern void radix_tree_init(void);
-#ifdef CONFIG_KNOX_KAP
-int boot_mode_security;
-EXPORT_SYMBOL(boot_mode_security);
-#endif
+
 /*
  * Debug helper: via this flag we know that we are in 'early bootup code'
  * where only the boot processor is running with IRQ disabled.  This means
@@ -455,15 +448,6 @@ static int __init do_early_param(char *param, char *val, const char *unused)
 		}
 	}
 	/* We accept everything at this stage. */
-#ifdef CONFIG_KNOX_KAP
-	if ((strncmp(param, "androidboot.security_mode", 26) == 0)) {
-		pr_warn("val = %d\n",*val);
-	        if ((strncmp(val, "1526595585", 10) == 0)) {
-				pr_info("Security Boot Mode \n");
-				boot_mode_security = 1;
-			}
-	}
-#endif
 	unset_memsize_reserved_name();
 	return 0;
 }
@@ -530,48 +514,6 @@ static void __init mm_init(void)
 	pgtable_init();
 	vmalloc_init();
 }
-#ifdef	CONFIG_TIMA_RKP
-#ifdef CONFIG_TIMA_RKP_4G
-__attribute__((section(".rkp.bitmap"))) u8 rkp_pgt_bitmap_arr[0x20000] = {0};
-__attribute__((section(".rkp.dblmap"))) u8 rkp_map_bitmap_arr[0x20000] = {0};
-#else
-__attribute__((section(".rkp.bitmap"))) u8 rkp_pgt_bitmap_arr[0x18000] = {0};
-__attribute__((section(".rkp.dblmap"))) u8 rkp_map_bitmap_arr[0x18000] = {0};
-#endif
-extern void* vmm_extra_mem;
-u8 rkp_started = 0;
-static void rkp_init(void)
-{
-	rkp_init_t init;
-	init.magic = RKP_INIT_MAGIC;
-	init.vmalloc_start = VMALLOC_START;
-	init.vmalloc_end = (u64)high_memory;
-	init.init_mm_pgd = (u64)__pa(swapper_pg_dir);
-	init.id_map_pgd = (u64)__pa(idmap_pg_dir);
-	init.rkp_pgt_bitmap = (u64)__pa(rkp_pgt_bitmap);
-	init.rkp_map_bitmap = (u64)__pa(rkp_map_bitmap);
-	init.rkp_pgt_bitmap_size = RKP_PGT_BITMAP_LEN;
-	init.zero_pg_addr = (u64)__pa(empty_zero_page);
-	init._text = (u64) _text;
-	init._etext = (u64) _etext;
-	if (!vmm_extra_mem) {
-		printk(KERN_ERR"Disable RKP: Failed to allocate extra mem\n");
-		return;
-	}
-	init.extra_memory_addr = __pa(vmm_extra_mem);
-	init.extra_memory_size = 0x600000;
-	init._srodata = (u64) __start_rodata;
-	init._erodata =(u64) __end_rodata;
-#if defined(CONFIG_USE_HOST_FD_LIBRARY)
-	init.large_memory = (u32) virt_to_phys(fd_vaddr);
-#else
-	init.large_memory = 0;
-#endif
-	rkp_call(RKP_INIT, (u64)&init, 0, 0, 0, 0);
-	rkp_started = 1;
-	return;
-}
-#endif
 
 asmlinkage __visible void __init start_kernel(void)
 {
@@ -629,17 +571,6 @@ asmlinkage __visible void __init start_kernel(void)
 	if (!IS_ERR_OR_NULL(after_dashes))
 		parse_args("Setting init args", after_dashes, NULL, 0, -1, -1,
 			   set_init_arg);
-
-#ifdef CONFIG_TIMA_RKP
-#ifdef CONFIG_KNOX_KAP
-	if (boot_mode_security)
-		vmm_init();
-	else
-		vmm_disable();
-#else
-	vmm_init();
-#endif //CONFIG_KNOX_KAP
-#endif //CONFIG_TIMA_RKP
 
 	/*
 	 * These use large bootmem allocations and must precede
@@ -743,14 +674,6 @@ asmlinkage __visible void __init start_kernel(void)
 	init_espfix_bsp();
 #endif
 	thread_info_cache_init();
-#ifdef CONFIG_TIMA_RKP
-
-#ifdef CONFIG_KNOX_KAP
-	if (boot_mode_security) 
-#endif
-		rkp_init();
-
-#endif /* CONFIG_TIMA_RKP */
 	cred_init();
 	fork_init(totalram_pages);
 	proc_caches_init();

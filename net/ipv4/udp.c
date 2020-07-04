@@ -114,9 +114,6 @@
 #include <trace/events/skb.h>
 #include <net/busy_poll.h>
 #include "udp_impl.h"
-/* START_OF_KNOX_NPA */
-#include <net/ncm.h>
-/* END_OF_KNOX_NPA */
 
 struct udp_table udp_table __read_mostly;
 EXPORT_SYMBOL(udp_table);
