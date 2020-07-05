@@ -626,7 +626,7 @@ static void smp_send_all_cpu_backtrace(void)
 	}
 
 	clear_bit(0, &backtrace_flag);
-	smp_mb__after_clear_bit();
+	smp_mb__before_atomic();
 }
 
 /*
@@ -768,7 +768,7 @@ void smp_send_stop(void)
 	}
 
 	/* Wait up to one second for other CPUs to stop */
-	timeout = USEC_PER_SEC * 5;
+	timeout = USEC_PER_SEC;
 	while (num_other_online_cpus() && timeout--)
 		udelay(1);
 
