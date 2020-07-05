@@ -442,38 +442,11 @@ void __init smp_prepare_cpus(unsigned int max_cpus)
 }
 
 static void (*__smp_cross_call)(const struct cpumask *, unsigned int);
-DEFINE_PER_CPU(bool, pending_ipi);
-
-static void smp_cross_call_common(const struct cpumask *cpumask,
-						unsigned int func)
-{
-	unsigned int cpu;
-
-	for_each_cpu(cpu, cpumask)
-		per_cpu(pending_ipi, cpu) = true;
-
-	__smp_cross_call(cpumask, func);
-}
 
 void __init set_smp_cross_call(void (*fn)(const struct cpumask *, unsigned int))
 {
 	if (!__smp_cross_call)
 		__smp_cross_call = fn;
-}
-
-void arch_send_call_function_ipi_mask(const struct cpumask *mask)
-{
-	smp_cross_call_common(mask, IPI_CALL_FUNC);
-}
-
-void arch_send_wakeup_ipi_mask(const struct cpumask *mask)
-{
-	smp_cross_call_common(mask, IPI_WAKEUP);
-}
-
-void arch_send_call_function_single_ipi(int cpu)
-{
-	smp_cross_call_common(cpumask_of(cpu), IPI_CALL_FUNC_SINGLE);
 }
 
 static const char *ipi_types[NR_IPI] __tracepoint_string = {
@@ -519,6 +492,21 @@ u64 smp_irq_stat_cpu(unsigned int cpu)
 		sum += __get_irq_stat(cpu, ipi_irqs[i]);
 
 	return sum;
+}
+
+void arch_send_call_function_ipi_mask(const struct cpumask *mask)
+{
+	smp_cross_call(mask, IPI_CALL_FUNC);
+}
+
+void arch_send_wakeup_ipi_mask(const struct cpumask *mask)
+{
+	smp_cross_call(mask, IPI_WAKEUP);
+}
+
+void arch_send_call_function_single_ipi(int cpu)
+{
+	smp_cross_call(cpumask_of(cpu), IPI_CALL_FUNC_SINGLE);
 }
 
 #ifdef CONFIG_IRQ_WORK
@@ -598,8 +586,7 @@ void smp_send_all_cpu_backtrace(void)
 	dump_stack();
 
 	pr_info("\nsending IPI to all other CPUs:\n");
-	if (!cpus_empty(backtrace_mask))
-		smp_cross_call_common(&backtrace_mask, IPI_CPU_BACKTRACE);
+	smp_cross_call(&backtrace_mask, IPI_CPU_BACKTRACE);
 
 	/* Wait for up to 10 seconds for all other CPUs to do the backtrace */
 	for (i = 0; i < 10 * 1000; i++) {
@@ -704,16 +691,12 @@ void handle_IPI(int ipinr, struct pt_regs *regs)
 
 	if ((unsigned)ipinr < NR_IPI)
 		trace_ipi_exit(ipi_types[ipinr]);
-
-	per_cpu(pending_ipi, cpu) = false;
-
 	set_irq_regs(old_regs);
 }
 
 void smp_send_reschedule(int cpu)
 {
-	BUG_ON(cpu_is_offline(cpu));
-	smp_cross_call_common(cpumask_of(cpu), IPI_RESCHEDULE);
+	smp_cross_call(cpumask_of(cpu), IPI_RESCHEDULE);
 }
 
 void smp_send_stop(void)
@@ -724,7 +707,7 @@ void smp_send_stop(void)
 	cpumask_copy(&mask, cpu_online_mask);
 	cpumask_clear_cpu(smp_processor_id(), &mask);
 	if (!cpumask_empty(&mask))
-		smp_cross_call_common(&mask, IPI_CPU_STOP);
+		smp_cross_call(&mask, IPI_CPU_STOP);
 
 	/* Wait up to one second for other CPUs to stop */
 	timeout = USEC_PER_SEC;
