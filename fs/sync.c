@@ -16,10 +16,8 @@
 #include <linux/quotaops.h>
 #include <linux/backing-dev.h>
 #include "internal.h"
-
 #ifdef CONFIG_DYNAMIC_FSYNC
-extern bool dyn_sync_scr_suspended;
-extern bool dyn_fsync_active __read_mostly;
+#include <linux/dyn_sync_cntrl.h>
 #endif
 
 #define VALID_FLAGS (SYNC_FILE_RANGE_WAIT_BEFORE|SYNC_FILE_RANGE_WRITE| \

@@ -1,17 +1,9 @@
 /*
- * Author: Paul Reioux aka Faux123 <reioux@gmail.com>
+ * Dynamic sync control driver V2
  *
- * Copyright 2013 Paul Reioux
- * Copyright 2012 Paul Reioux
+ * by andip71 (alias Lord Boeffla)
  *
- * This software is licensed under the terms of the GNU General Public
- * License version 2, as published by the Free Software Foundation, and
- * may be copied, distributed, and modified under those terms.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * All credits for original implemenation to faux123
  *
  */
 
@@ -21,13 +13,10 @@
 #include <linux/mutex.h>
 #include <linux/writeback.h>
 #include <linux/fb.h>
-
+#include <linux/dyn_sync_cntrl.h>
 #ifdef CONFIG_DYNAMIC_FSYNC_BG_SYNC
 #include <linux/delay.h>
 #endif
-
-#define DYN_FSYNC_VERSION_MAJOR 1
-#define DYN_FSYNC_VERSION_MINOR 1
 
 struct notifier_block dyn_fsync_fb_notif;
 
@@ -45,10 +34,13 @@ static int suspend_sync_done;
  * transitions
  */
 static DEFINE_MUTEX(fsync_mutex);
-bool dyn_sync_scr_suspended = false;
-bool dyn_fsync_active __read_mostly = true;
 
-extern void dyn_fsync_suspend_actions(void);
+// Declarations
+
+bool dyn_sync_scr_suspended = false;
+bool dyn_fsync_active __read_mostly = DYN_FSYNC_ACTIVE_DEFAULT;
+
+// Functions
 
 #ifdef CONFIG_DYNAMIC_FSYNC_BG_SYNC
 static int bg_sync(void)
@@ -104,12 +96,10 @@ static ssize_t dyn_fsync_active_store(struct kobject *kobj,
 		if (data == 1) {
 			pr_info("%s: dynamic fsync enabled\n", __func__);
 			dyn_fsync_active = true;
-		}
-		else if (data == 0) {
+		} else if (data == 0) {
 			pr_info("%s: dyanamic fsync disabled\n", __func__);
 			dyn_fsync_active = false;
-		}
-		else
+		} else
 			pr_info("%s: bad value: %u\n", __func__, data);
 	} else
 		pr_info("%s: unknown input!\n", __func__);
@@ -120,32 +110,10 @@ static ssize_t dyn_fsync_active_store(struct kobject *kobj,
 static ssize_t dyn_fsync_version_show(struct kobject *kobj,
 		struct kobj_attribute *attr, char *buf)
 {
-	return sprintf(buf, "version: %u.%u by faux123\n",
+	return sprintf(buf, "version: %u.%u\n",
 		DYN_FSYNC_VERSION_MAJOR,
 		DYN_FSYNC_VERSION_MINOR);
 }
-
-static struct kobj_attribute dyn_fsync_active_attribute =
-	__ATTR(Dyn_fsync_active, 0660,
-		dyn_fsync_active_show,
-		dyn_fsync_active_store);
-
-static struct kobj_attribute dyn_fsync_version_attribute =
-	__ATTR(Dyn_fsync_version, 0444, dyn_fsync_version_show, NULL);
-
-static struct attribute *dyn_fsync_active_attrs[] =
-	{
-		&dyn_fsync_active_attribute.attr,
-		&dyn_fsync_version_attribute.attr,
-		NULL,
-	};
-
-static struct attribute_group dyn_fsync_active_attr_group =
-	{
-		.attrs = dyn_fsync_active_attrs,
-	};
-
-static struct kobject *dyn_fsync_kobj;
 
 static void dyn_fsync_suspend(void)
 {
@@ -192,9 +160,36 @@ static int dyn_fsync_fb_notifier_callback(struct notifier_block *self,
 	return 0;
 }
 
-struct notifier_block dyn_fsync_fb_notif = {
+// Module structures
+
+struct notifier_block dyn_fsync_fb_notif =
+{
 	.notifier_call = dyn_fsync_fb_notifier_callback,
 };
+
+static struct kobj_attribute dyn_fsync_active_attribute =
+	__ATTR(Dyn_fsync_active, 0660,
+		dyn_fsync_active_show,
+		dyn_fsync_active_store);
+
+static struct kobj_attribute dyn_fsync_version_attribute =
+	__ATTR(Dyn_fsync_version, 0444, dyn_fsync_version_show, NULL);
+
+static struct attribute *dyn_fsync_active_attrs[] =
+{
+	&dyn_fsync_active_attribute.attr,
+	&dyn_fsync_version_attribute.attr,
+	NULL,
+};
+
+static struct attribute_group dyn_fsync_active_attr_group =
+{
+	.attrs = dyn_fsync_active_attrs,
+};
+
+static struct kobject *dyn_fsync_kobj;
+
+// Module init/exit
 
 static int __init dyn_fsync_init(void)
 {
@@ -227,6 +222,8 @@ static int __init dyn_fsync_init(void)
 		kobject_put(dyn_fsync_kobj);
 	}
 
+	pr_info("%s dynamic fsync initialisation complete\n", __func__);
+
 	return ret;
 }
 
@@ -234,13 +231,16 @@ static void __exit dyn_fsync_exit(void)
 {
 	if (dyn_fsync_kobj != NULL)
 		kobject_put(dyn_fsync_kobj);
+
 	fb_unregister_client(&dyn_fsync_fb_notif);
+
+	pr_info("%s dynamic fsync unregistration complete\n", __func__);
 }
 
 module_init(dyn_fsync_init);
 module_exit(dyn_fsync_exit);
 
-MODULE_AUTHOR("Paul Reioux <reioux@gmail.com>");
+MODULE_AUTHOR("andip71");
 MODULE_DESCRIPTION("dynamic fsync - automatic fs sync optimizaition using"
 		    "Power_suspend driver!");
 MODULE_LICENSE("GPL v2");
