@@ -121,14 +121,6 @@ struct zram {
 	 * zram is claimed so open request will be failed
 	 */
 	bool claim; /* Protected by bdev->bd_mutex */
-#ifdef CONFIG_ZRAM_WRITEBACK
-	struct file *backing_dev;
-	struct block_device *bdev;
-	unsigned int old_block_size;
-	unsigned long *bitmap;
-	unsigned long nr_pages;
-	spinlock_t bitmap_lock;
-#endif
 #ifdef CONFIG_ZRAM_MEMORY_TRACKING
 	struct dentry *debugfs_dir;
 #endif
