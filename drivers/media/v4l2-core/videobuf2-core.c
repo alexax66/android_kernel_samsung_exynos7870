@@ -1805,7 +1805,7 @@ static int __allocate_acquire_fence(struct vb2_queue *q, struct vb2_buffer *vb,
 {
 	q->timeline_max++;
 	if (use_sync) {
-		int fd = get_unused_fd();
+		int fd = get_unused_fd_flags(0);
 
 		if (fd < 0) {
 			dprintk(1, "qbuf: failed to get unused fd\n");

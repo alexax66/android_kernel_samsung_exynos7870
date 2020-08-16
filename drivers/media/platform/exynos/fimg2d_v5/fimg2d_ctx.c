@@ -744,7 +744,7 @@ int fimg2d_prepare_each_dmabuf_buffer(struct fimg2d_control *ctrl,
 	}
 
 	if (use_fence) {
-		fd = get_unused_fd();
+		fd = get_unused_fd_flags(0);
 		if (fd < 0) {
 			fimg2d_err("Failed to get unused fd, fd = %d\n", fd);
 			ret = -EINVAL;
