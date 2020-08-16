@@ -50,7 +50,7 @@ struct user_namespace init_user_ns = {
 	.count = ATOMIC_INIT(3),
 	.owner = GLOBAL_ROOT_UID,
 	.group = GLOBAL_ROOT_GID,
-	.ns_inum = PROC_USER_INIT_INO,
+	.ns.inum = PROC_USER_INIT_INO,
 #ifdef CONFIG_USER_NS
 	.ns.ops = &userns_operations,
 #endif
