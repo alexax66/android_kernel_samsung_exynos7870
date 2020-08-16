@@ -2363,7 +2363,7 @@ static int decon_set_win_config(struct decon_device *decon,
 	unsigned int bw = 0;
 	int plane_cnt = 0;
 
-	fd = get_unused_fd();
+	fd = get_unused_fd_flags(0);
 	if (fd < 0)
 		return fd;
 

@@ -2611,19 +2611,19 @@ static int decon_set_win_config(struct decon_device *decon,
 	unsigned int bw = 0;
 
 	mutex_lock(&decon->output_lock);
-	fd = get_unused_fd();
+	fd = get_unused_fd_flags(0);
 	if (fd < 0) {
 		mutex_unlock(&decon->output_lock);
 		return -EINVAL;
 	}
 
 	if (fd < 3) {
-		/* If fd from get_unused_fd() has value between 0 and 2,
+		/* If fd from get_unused_fd_flags(0) has value between 0 and 2,
 		 * fd is tried to get value again using dup() except current fd vlaue.
 		 */
 		while (fd < 3) {
 			unused_fd[fd_idx++] = fd;
-			fd = get_unused_fd();
+			fd = get_unused_fd_flags(0);
 		}
 
 		while (fd_idx-- > 0)

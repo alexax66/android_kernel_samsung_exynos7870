@@ -228,7 +228,7 @@ static int adf_device_post_config(struct adf_device *dev,
 	if (copy_from_user(&data, arg, sizeof(data)))
 		return -EFAULT;
 
-	complete_fence_fd = get_unused_fd();
+	complete_fence_fd = get_unused_fd_flags(0);
 	if (complete_fence_fd < 0)
 		return complete_fence_fd;
 
@@ -336,7 +336,7 @@ static int adf_intf_simple_post_config(struct adf_interface *intf,
 	struct adf_buffer buf;
 	int ret = 0;
 
-	complete_fence_fd = get_unused_fd();
+	complete_fence_fd = get_unused_fd_flags(0);
 	if (complete_fence_fd < 0)
 		return complete_fence_fd;
 
