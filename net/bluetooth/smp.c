@@ -857,7 +857,7 @@ static u8 smp_confirm(struct smp_chan *smp)
 
 	BT_DBG("conn %p", conn);
 
-	ret = smp_c1(smp, smp->tk, smp->prnd, smp->preq, smp->prsp,
+	ret = smp_c1(smp->tfm_aes, smp->tk, smp->prnd, smp->preq, smp->prsp,
 		     conn->hcon->init_addr_type, &conn->hcon->init_addr,
 		     conn->hcon->resp_addr_type, &conn->hcon->resp_addr,
 		     cp.confirm_val);
@@ -888,7 +888,7 @@ static u8 smp_random(struct smp_chan *smp)
 
 	BT_DBG("conn %p %s", conn, conn->hcon->out ? "master" : "slave");
 
-	ret = smp_c1(smp, smp->tk, smp->rrnd, smp->preq, smp->prsp,
+	ret = smp_c1(smp->tfm_aes, smp->tk, smp->rrnd, smp->preq, smp->prsp,
 		     hcon->init_addr_type, &hcon->init_addr,
 		     hcon->resp_addr_type, &hcon->resp_addr, confirm);
 	if (ret)
@@ -904,7 +904,7 @@ static u8 smp_random(struct smp_chan *smp)
 		__le64 rand = 0;
 		__le16 ediv = 0;
 
-		smp_s1(smp, smp->tk, smp->rrnd, smp->prnd, stk);
+		smp_s1(smp->tfm_aes, smp->tk, smp->rrnd, smp->prnd, stk);
 
 		memset(stk + smp->enc_key_size, 0,
 		       SMP_MAX_ENC_KEY_SIZE - smp->enc_key_size);
@@ -923,7 +923,7 @@ static u8 smp_random(struct smp_chan *smp)
 		smp_send_cmd(conn, SMP_CMD_PAIRING_RANDOM, sizeof(smp->prnd),
 			     smp->prnd);
 
-		smp_s1(smp, smp->tk, smp->prnd, smp->rrnd, stk);
+		smp_s1(smp->tfm_aes, smp->tk, smp->prnd, smp->rrnd, stk);
 
 		memset(stk + smp->enc_key_size, 0,
 		       SMP_MAX_ENC_KEY_SIZE - smp->enc_key_size);
@@ -1699,7 +1699,7 @@ static u8 smp_cmd_pairing_req(struct l2cap_conn *conn, struct sk_buff *skb)
 	if (sec_level > conn->hcon->pending_sec_level)
 		conn->hcon->pending_sec_level = sec_level;
 
-	/* If we need MITM check that it can be acheived */
+	/* If we need MITM check that it can be achieved */
 	if (conn->hcon->pending_sec_level >= BT_SECURITY_HIGH) {
 		u8 method;
 
@@ -1825,7 +1825,7 @@ static u8 smp_cmd_pairing_rsp(struct l2cap_conn *conn, struct sk_buff *skb)
 	else if (conn->hcon->pending_sec_level > BT_SECURITY_HIGH)
 		conn->hcon->pending_sec_level = BT_SECURITY_HIGH;
 
-	/* If we need MITM check that it can be acheived */
+	/* If we need MITM check that it can be achieved */
 	if (conn->hcon->pending_sec_level >= BT_SECURITY_HIGH) {
 		u8 method;
 
