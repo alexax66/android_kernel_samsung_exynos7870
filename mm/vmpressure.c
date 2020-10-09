@@ -146,7 +146,7 @@ static enum vmpressure_levels vmpressure_level(unsigned long pressure)
 }
 
 static unsigned long vmpressure_calc_pressure(unsigned long scanned,
-						    unsigned long reclaimed, struct vmpressure *vmpr)
+						    unsigned long reclaimed)
 {
 	unsigned long scale = scanned + reclaimed;
 	unsigned long pressure;
@@ -160,7 +160,6 @@ static unsigned long vmpressure_calc_pressure(unsigned long scanned,
 	 */
 	pressure = scale - (reclaimed * scale / scanned);
 	pressure = pressure * 100 / scale;
-	vmpr->pressure = pressure;
 
 	pr_debug("%s: %3lu  (s: %lu  r: %lu)\n", __func__, pressure,
 		 scanned, reclaimed);
@@ -195,7 +194,7 @@ static bool vmpressure_event(struct vmpressure *vmpr,
 	unsigned long pressure;
 	bool signalled = false;
 
-	pressure = vmpressure_calc_pressure(scanned, reclaimed, vmpr);
+	pressure = vmpressure_calc_pressure(scanned, reclaimed);
 	level = vmpressure_level(pressure);
 
 	mutex_lock(&vmpr->events_lock);
@@ -335,7 +334,7 @@ static void vmpressure_global(gfp_t gfp, unsigned long scanned,
 	vmpr->stall = 0;
 	spin_unlock(&vmpr->sr_lock);
 
-	pressure = vmpressure_calc_pressure(scanned, reclaimed, vmpr);
+	pressure = vmpressure_calc_pressure(scanned, reclaimed);
 	pressure = vmpressure_account_stall(pressure, stall, scanned);
 	vmpressure_notify(pressure);
 }
